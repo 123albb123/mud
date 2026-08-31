@@ -6,6 +6,10 @@ export interface GMCPMessage {
 }
 
 export interface CharacterVitals {
+    version?: number;
+    snapshot?: true;
+    revision?: number;
+    sequence?: number;
     hp?: number;
     max_hp?: number;
     jing?: number;
@@ -14,6 +18,98 @@ export interface CharacterVitals {
     max_jingli?: number;
     neili?: number;
     max_neili?: number;
+}
+
+export interface SkillAssignment {
+    slot: string;
+    skill_id: string;
+    name: string;
+}
+
+export interface CharacterWeapon {
+    name: string;
+    skill_type: string;
+    skill_id?: string;
+    skill_name?: string;
+}
+
+export interface CharacterStatus {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    busy: boolean;
+    fighting: boolean;
+    can_act: boolean;
+    ghost: boolean;
+    unconscious: boolean;
+    anger: number;
+    food: number;
+    water: number;
+    exp: number;
+    potential: number;
+    weapon: CharacterWeapon | null;
+    enabled: SkillAssignment[];
+    prepared: SkillAssignment[];
+}
+
+export type CombatRelation = 'fight' | 'kill';
+export type CombatHealth = 'healthy' | 'injured' | 'badly_injured' | 'near_death' | 'unconscious' | 'unknown';
+
+export interface CombatTarget {
+    entity_id: string;
+    name: string;
+    relation: CombatRelation;
+    health: CombatHealth;
+}
+
+export interface CombatStateSnapshot {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    in_combat: boolean;
+    busy: boolean;
+    can_act: boolean;
+    targets: CombatTarget[];
+    primary_target?: string;
+}
+
+export interface CharacterSkill {
+    skill_id: string;
+    name: string;
+    level: number;
+    progress: number;
+    type: string;
+    is_basic: boolean;
+    enabled_for: string[];
+    prepared_for: string[];
+    enable_slots: string[];
+}
+
+export interface SkillsSnapshot {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    skills: CharacterSkill[];
+}
+
+export type CombatActionKind = 'fight' | 'kill' | 'perform' | 'exert';
+
+export interface CombatAction {
+    action_id: string;
+    label: string;
+    kind: CombatActionKind;
+    requires_target: boolean;
+}
+
+export interface CombatActionsSnapshot {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    actions: CombatAction[];
 }
 
 export interface RoomInfo {
@@ -94,18 +190,26 @@ export const GMCP_CLIENT_HELLO = {
 
 export const GMCP_SUPPORTS = [
     'Char.Vitals 1',
+    'Char.Status 1',
     'Room.Info 1',
     'Room.Entities 1',
     'Char.Inventory 1',
     'Char.Equipment 1',
+    'Char.Skills 1',
+    'Combat.State 1',
+    'Combat.Actions 1',
 ];
 
 export const GMCP_INITIAL_GETS = [
     'Char.Vitals.Get',
+    'Char.Status.Get',
     'Room.Info.Get',
     'Room.Entities.Get',
     'Char.Inventory.Get',
     'Char.Equipment.Get',
+    'Char.Skills.Get',
+    'Combat.State.Get',
+    'Combat.Actions.Get',
 ];
 
 const itemActions = new Set([
@@ -116,6 +220,8 @@ const entityActions = new Set([
 ]);
 const itemIdPattern = /^i-[A-Za-z0-9]+-[0-9]+$/;
 const entityIdPattern = /^e-[A-Za-z0-9]+-[0-9]+$/;
+const skillIdPattern = /^[a-z0-9_-]{1,64}$/;
+const combatActionIdPattern = /^(fight|kill|perform:[a-z0-9_-]{1,64}:[a-z0-9_-]{1,64}|exert:force:[a-z0-9_-]{1,64})$/;
 
 export interface WebItemActionRequest {
     item_id: string;
@@ -172,6 +278,56 @@ export const toWebEntityGiveRequest = (
     return { item_id: itemId, entity_id: entityId };
 };
 
+export interface WebSkillActionRequest {
+    skill_id: string;
+    action: 'enable' | 'prepare';
+    slot?: string;
+}
+
+export const toWebSkillActionRequest = (
+    skillId: string,
+    action: 'enable' | 'prepare',
+    slot?: string,
+): WebSkillActionRequest | null => {
+    if (!skillIdPattern.test(skillId)) {
+        return null;
+    }
+    if (action === 'enable') {
+        if (!slot || !skillIdPattern.test(slot)) {
+            return null;
+        }
+        return { skill_id: skillId, action, slot };
+    }
+    if (slot !== undefined) {
+        return null;
+    }
+    return { skill_id: skillId, action };
+};
+
+export interface WebCombatActionRequest {
+    action_id: string;
+    target_entity_id?: string;
+}
+
+export const toWebCombatActionRequest = (
+    actionId: string,
+    targetEntityId?: string,
+): WebCombatActionRequest | null => {
+    if (!combatActionIdPattern.test(actionId)) {
+        return null;
+    }
+    if (targetEntityId !== undefined && !entityIdPattern.test(targetEntityId)) {
+        return null;
+    }
+    const requiresTarget = actionId === 'fight' || actionId === 'kill';
+    if (requiresTarget !== (targetEntityId !== undefined)) {
+        return null;
+    }
+    return targetEntityId === undefined
+        ? { action_id: actionId }
+        : { action_id: actionId, target_entity_id: targetEntityId };
+};
+
 export const parseGMCP = (bytes: Uint8Array): GMCPMessage => {
     const message = decoder.decode(bytes);
     const separator = message.indexOf(' ');
@@ -215,7 +371,14 @@ export const toCharacterVitals = (payload: unknown): CharacterVitals | null => {
         return null;
     }
     const data = payload as Record<string, unknown>;
+    const header = snapshotHeader(payload);
     return {
+        ...(header ? {
+            version: header.version as number,
+            snapshot: true,
+            revision: header.revision as number,
+            sequence: header.sequence as number,
+        } : {}),
         hp: finiteNumber(data.hp),
         max_hp: finiteNumber(data.max_hp),
         jing: finiteNumber(data.jing),
@@ -257,6 +420,250 @@ const snapshotHeader = (payload: unknown): Record<string, unknown> | null => {
         return null;
     }
     return data;
+};
+
+const safeProtocolText = (value: unknown, required = true): string | null => {
+    if (typeof value !== 'string' || value.length > 256 || /[\r\n]/.test(value) ||
+        (required && value.length === 0)) {
+        return null;
+    }
+    return value;
+};
+
+const parseSkillAssignment = (value: unknown): SkillAssignment | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const name = safeProtocolText(data.name);
+    if (typeof data.slot !== 'string' || !skillIdPattern.test(data.slot) ||
+        typeof data.skill_id !== 'string' || !skillIdPattern.test(data.skill_id) || !name) {
+        return null;
+    }
+    return { slot: data.slot, skill_id: data.skill_id, name };
+};
+
+const parseSkillAssignments = (value: unknown): SkillAssignment[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const seen = new Set<string>();
+    return value.map(parseSkillAssignment).filter((assignment): assignment is SkillAssignment => {
+        if (!assignment || seen.has(assignment.slot)) {
+            return false;
+        }
+        seen.add(assignment.slot);
+        return true;
+    });
+};
+
+const parseWeapon = (value: unknown): CharacterWeapon | null => {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    if (typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const name = safeProtocolText(data.name);
+    if (!name || typeof data.skill_type !== 'string' ||
+        (data.skill_type !== '' && !skillIdPattern.test(data.skill_type))) {
+        return null;
+    }
+    const weapon: CharacterWeapon = { name, skill_type: data.skill_type };
+    if (typeof data.skill_id === 'string' && skillIdPattern.test(data.skill_id)) {
+        weapon.skill_id = data.skill_id;
+        const skillName = safeProtocolText(data.skill_name);
+        if (skillName) {
+            weapon.skill_name = skillName;
+        }
+    }
+    return weapon;
+};
+
+export const toCharacterStatus = (payload: unknown): CharacterStatus | null => {
+    const data = snapshotHeader(payload);
+    if (!data) {
+        return null;
+    }
+    const values = ['anger', 'food', 'water', 'exp', 'potential'].map((key) => finiteNumber(data[key]));
+    const flags = ['busy', 'fighting', 'can_act', 'ghost', 'unconscious'].map((key) => booleanFlag(data[key]));
+    if (values.some((value) => value === undefined) || flags.some((value) => value === undefined)) {
+        return null;
+    }
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        busy: flags[0] as boolean,
+        fighting: flags[1] as boolean,
+        can_act: flags[2] as boolean,
+        ghost: flags[3] as boolean,
+        unconscious: flags[4] as boolean,
+        anger: values[0] as number,
+        food: values[1] as number,
+        water: values[2] as number,
+        exp: values[3] as number,
+        potential: values[4] as number,
+        weapon: parseWeapon(data.weapon),
+        enabled: parseSkillAssignments(data.enabled),
+        prepared: parseSkillAssignments(data.prepared),
+    };
+};
+
+const combatRelations = new Set<CombatRelation>(['fight', 'kill']);
+const combatHealthStates = new Set<CombatHealth>([
+    'healthy', 'injured', 'badly_injured', 'near_death', 'unconscious', 'unknown',
+]);
+
+const parseCombatTarget = (value: unknown): CombatTarget | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const name = safeProtocolText(data.name);
+    if (typeof data.entity_id !== 'string' || !entityIdPattern.test(data.entity_id) || !name ||
+        typeof data.relation !== 'string' || !combatRelations.has(data.relation as CombatRelation) ||
+        typeof data.health !== 'string' || !combatHealthStates.has(data.health as CombatHealth)) {
+        return null;
+    }
+    return {
+        entity_id: data.entity_id,
+        name,
+        relation: data.relation as CombatRelation,
+        health: data.health as CombatHealth,
+    };
+};
+
+export const toCombatStateSnapshot = (payload: unknown): CombatStateSnapshot | null => {
+    const data = snapshotHeader(payload);
+    if (!data || !Array.isArray(data.targets)) {
+        return null;
+    }
+    const inCombat = booleanFlag(data.in_combat);
+    const busy = booleanFlag(data.busy);
+    const canAct = booleanFlag(data.can_act);
+    if (inCombat === undefined || busy === undefined || canAct === undefined ||
+        (data.primary_target !== undefined &&
+            (typeof data.primary_target !== 'string' || data.primary_target !== '' && !entityIdPattern.test(data.primary_target)))) {
+        return null;
+    }
+    const seen = new Set<string>();
+    const targets = data.targets.map(parseCombatTarget).filter((target): target is CombatTarget => {
+        if (!target || seen.has(target.entity_id)) {
+            return false;
+        }
+        seen.add(target.entity_id);
+        return true;
+    });
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        in_combat: inCombat,
+        busy,
+        can_act: canAct,
+        targets,
+        ...(typeof data.primary_target === 'string' && data.primary_target !== ''
+            ? { primary_target: data.primary_target }
+            : {}),
+    };
+};
+
+const parseCharacterSkill = (value: unknown): CharacterSkill | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const name = safeProtocolText(data.name);
+    const type = safeProtocolText(data.type);
+    const level = finiteNumber(data.level);
+    const progress = finiteNumber(data.progress);
+    if (typeof data.skill_id !== 'string' || !skillIdPattern.test(data.skill_id) || !name || !type ||
+        level === undefined || progress === undefined || !Array.isArray(data.enabled_for) ||
+        !Array.isArray(data.prepared_for) || !Array.isArray(data.enable_slots) ||
+        booleanFlag(data.is_basic) === undefined) {
+        return null;
+    }
+    return {
+        skill_id: data.skill_id,
+        name,
+        level,
+        progress: Math.max(0, Math.min(100, progress)),
+        type,
+        is_basic: booleanFlag(data.is_basic) as boolean,
+        enabled_for: data.enabled_for.filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
+        prepared_for: data.prepared_for.filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
+        enable_slots: data.enable_slots.filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
+    };
+};
+
+export const toSkillsSnapshot = (payload: unknown): SkillsSnapshot | null => {
+    const data = snapshotHeader(payload);
+    if (!data || !Array.isArray(data.skills)) {
+        return null;
+    }
+    const seen = new Set<string>();
+    const skills = data.skills.map(parseCharacterSkill).filter((skill): skill is CharacterSkill => {
+        if (!skill || seen.has(skill.skill_id)) {
+            return false;
+        }
+        seen.add(skill.skill_id);
+        return true;
+    });
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        skills,
+    };
+};
+
+const combatActionKinds = new Set<CombatActionKind>(['fight', 'kill', 'perform', 'exert']);
+
+const parseCombatAction = (value: unknown): CombatAction | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const label = safeProtocolText(data.label);
+    const requiresTarget = booleanFlag(data.requires_target);
+    if (typeof data.action_id !== 'string' || !combatActionIdPattern.test(data.action_id) || !label ||
+        typeof data.kind !== 'string' || !combatActionKinds.has(data.kind as CombatActionKind) ||
+        requiresTarget === undefined) {
+        return null;
+    }
+    return {
+        action_id: data.action_id,
+        label,
+        kind: data.kind as CombatActionKind,
+        requires_target: requiresTarget,
+    };
+};
+
+export const toCombatActionsSnapshot = (payload: unknown): CombatActionsSnapshot | null => {
+    const data = snapshotHeader(payload);
+    if (!data || !Array.isArray(data.actions)) {
+        return null;
+    }
+    const seen = new Set<string>();
+    const actions = data.actions.map(parseCombatAction).filter((action): action is CombatAction => {
+        if (!action || seen.has(action.action_id)) {
+            return false;
+        }
+        seen.add(action.action_id);
+        return true;
+    });
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        actions,
+    };
 };
 
 const parseAction = (value: unknown, allowedActions: Set<string>): GMCPAction | null => {

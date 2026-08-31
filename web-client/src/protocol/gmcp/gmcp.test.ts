@@ -5,6 +5,9 @@ import {
     GMCP_SUPPORTS,
     parseGMCP,
     toCharacterVitals,
+    toCharacterStatus,
+    toCombatActionsSnapshot,
+    toCombatStateSnapshot,
     toEquipmentSnapshot,
     toInventorySnapshot,
     toRoomInfo,
@@ -12,6 +15,9 @@ import {
     toWebEntityActionRequest,
     toWebEntityGiveRequest,
     toWebItemActionRequest,
+    toWebCombatActionRequest,
+    toWebSkillActionRequest,
+    toSkillsSnapshot,
 } from './gmcp';
 
 const encode = (value: string) => new TextEncoder().encode(value);
@@ -62,17 +68,25 @@ describe('GMCP codec', () => {
         });
         expect(GMCP_SUPPORTS).toEqual([
             'Char.Vitals 1',
+            'Char.Status 1',
             'Room.Info 1',
             'Room.Entities 1',
             'Char.Inventory 1',
             'Char.Equipment 1',
+            'Char.Skills 1',
+            'Combat.State 1',
+            'Combat.Actions 1',
         ]);
         expect(GMCP_INITIAL_GETS).toEqual([
             'Char.Vitals.Get',
+            'Char.Status.Get',
             'Room.Info.Get',
             'Room.Entities.Get',
             'Char.Inventory.Get',
             'Char.Equipment.Get',
+            'Char.Skills.Get',
+            'Combat.State.Get',
+            'Combat.Actions.Get',
         ]);
     });
 
@@ -213,5 +227,76 @@ describe('GMCP codec', () => {
             entity_id: 'e-session-0001',
         });
         expect(toWebEntityGiveRequest('i-session-0002', '/clone/npc#1')).toBeNull();
+    });
+
+    it('normalizes strict Char.Status and Combat.State snapshots', () => {
+        const status = toCharacterStatus({
+            version: 1, snapshot: 1, revision: 4, sequence: 4,
+            busy: 1, fighting: true, can_act: 0, ghost: 0, unconscious: false,
+            anger: 12, food: 80, water: 70, exp: 900, potential: 30,
+            weapon: { name: '长剑', skill_type: 'sword', skill_id: 'taiji-sword', skill_name: '太极剑法' },
+            enabled: [{ slot: 'sword', skill_id: 'taiji-sword', name: '太极剑法' }],
+            prepared: [],
+        });
+        expect(status).toMatchObject({ busy: true, can_act: false, weapon: { skill_id: 'taiji-sword' } });
+        expect(toCharacterStatus({ version: 1, snapshot: 1, revision: 1, sequence: 1 })).toBeNull();
+
+        const combat = toCombatStateSnapshot({
+            version: 1, snapshot: true, revision: 7, sequence: 7,
+            in_combat: 1, busy: 0, can_act: true, primary_target: 'e-session-0001',
+            targets: [
+                { entity_id: 'e-session-0001', name: '欧阳克', relation: 'kill', health: 'badly_injured' },
+                { entity_id: 'e-session-0001', name: '重复', relation: 'fight', health: 'healthy' },
+                { entity_id: 'e-session-0002', name: '坏数据', relation: 'enemy', health: 'healthy' },
+            ],
+        });
+        expect(combat?.targets).toEqual([{
+            entity_id: 'e-session-0001', name: '欧阳克', relation: 'kill', health: 'badly_injured',
+        }]);
+        expect(toCombatStateSnapshot({ version: 1, snapshot: true, revision: 1, sequence: 1, targets: [] })).toBeNull();
+    });
+
+    it('normalizes skills and only server-shaped combat actions', () => {
+        const skills = toSkillsSnapshot({
+            version: 1, snapshot: true, revision: 2, sequence: 2,
+            skills: [{
+                skill_id: 'taiji-sword', name: '太极剑法', level: 120, progress: 36,
+                type: 'martial', is_basic: 0, enabled_for: ['sword'], prepared_for: [], enable_slots: ['sword'],
+            }, {
+                skill_id: 'bad\nname', name: '坏', level: 1, progress: 0,
+                type: 'martial', is_basic: 0, enabled_for: [], prepared_for: [], enable_slots: [],
+            }],
+        });
+        expect(skills?.skills).toHaveLength(1);
+        expect(skills?.skills[0].is_basic).toBe(false);
+
+        const actions = toCombatActionsSnapshot({
+            version: 1, snapshot: 1, revision: 3, sequence: 3,
+            actions: [
+                { action_id: 'fight', label: '切磋', kind: 'fight', requires_target: 1 },
+                { action_id: 'perform:sword:chan', label: '太极剑·缠', kind: 'perform', requires_target: 0 },
+                { action_id: 'perform:/tmp:bad', label: '坏', kind: 'perform', requires_target: 0 },
+            ],
+        });
+        expect(actions?.actions.map((action) => action.action_id)).toEqual(['fight', 'perform:sword:chan']);
+    });
+
+    it('builds only bounded Web.Skill.Action and Web.Combat.Action payloads', () => {
+        expect(toWebSkillActionRequest('taiji-sword', 'enable', 'sword')).toEqual({
+            skill_id: 'taiji-sword', action: 'enable', slot: 'sword',
+        });
+        expect(toWebSkillActionRequest('taiji-sword', 'prepare')).toEqual({
+            skill_id: 'taiji-sword', action: 'prepare',
+        });
+        expect(toWebSkillActionRequest('../../skill', 'prepare')).toBeNull();
+        expect(toWebSkillActionRequest('taiji-sword', 'prepare', 'sword')).toBeNull();
+        expect(toWebCombatActionRequest('fight', 'e-session-0001')).toEqual({
+            action_id: 'fight', target_entity_id: 'e-session-0001',
+        });
+        expect(toWebCombatActionRequest('perform:sword:chan')).toEqual({ action_id: 'perform:sword:chan' });
+        expect(toWebCombatActionRequest('perform:sword:chan', 'e-session-0001')).toBeNull();
+        expect(toWebCombatActionRequest('perform:/tmp:chan')).toBeNull();
+        expect(toWebCombatActionRequest('kill\nlook', 'e-session-0001')).toBeNull();
+        expect(toWebCombatActionRequest('kill', 'e-session-0001\n')).toBeNull();
     });
 });

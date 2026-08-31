@@ -287,6 +287,120 @@ button:disabled {
 .resource-fill.jade { background: #579276; }
 .resource-fill.gold { background: #bd9147; }
 
+.character-state {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 13px;
+}
+
+.state-chip {
+    padding: 4px 7px;
+    border: 1px solid #4d694e;
+    border-radius: 99px;
+    color: #a9cfad;
+    background: #162418;
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.state-chip.danger {
+    border-color: #7a413a;
+    color: #e3a49a;
+    background: #321816;
+}
+
+.weapon-chip {
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.combat-panel .panel-heading {
+    align-items: flex-start;
+}
+
+.combat-panel .panel-heading .state-chip {
+    margin-left: auto;
+}
+
+.combat-target {
+    display: grid;
+    gap: 3px;
+    min-height: 50px;
+    padding: 9px 10px;
+    border: 1px solid #4c3828;
+    border-radius: 7px;
+    color: #9f917e;
+    background: #120e0b;
+    font-size: 11px;
+}
+
+.combat-target strong {
+    color: #ead3a3;
+    font-size: 14px;
+}
+
+.combat-target-actions,
+.combat-techniques {
+    display: grid;
+    gap: 7px;
+    margin-top: 11px;
+}
+
+.combat-target-actions > label,
+.combat-techniques .eyebrow {
+    color: #a99475;
+    font-size: 11px;
+}
+
+.combat-target-actions select,
+.skill-actions select {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 7px 9px;
+    border: 1px solid #4f3d29;
+    border-radius: 5px;
+    outline: none;
+    color: #f0e3cc;
+    background: #090806;
+}
+
+.combat-action-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.combat-action-grid button,
+.skill-actions button,
+.prepare-action {
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px 9px;
+    border: 1px solid #6b5133;
+    border-radius: 5px;
+    color: #ddc28e;
+    background: #251b12;
+    font-size: 12px;
+}
+
+.combat-action-grid button span {
+    display: block;
+    margin-bottom: 2px;
+    color: #907957;
+    font-size: 9px;
+}
+
+.combat-action-grid button:enabled:hover,
+.skill-actions button:enabled:hover,
+.prepare-action:enabled:hover {
+    border-color: #b07d40;
+    background: #352518;
+}
+
 .direction-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(48px, 1fr));
@@ -574,7 +688,7 @@ button:disabled {
 
 .item-entrypoints {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin-top: 14px;
 }
@@ -645,6 +759,83 @@ button:disabled {
     overflow: auto;
     padding: 16px;
     background: #17120e;
+}
+
+.skills-panel {
+    min-height: 0;
+    overflow: auto;
+    padding: 14px;
+    background: #17120e;
+}
+
+.skills-summary {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 14px;
+    padding: 9px;
+    border: 1px solid #403120;
+    border-radius: 6px;
+    color: #b9aa94;
+    background: #120e0b;
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.skills-summary p,
+.skills-panel h3,
+.skill-card p,
+.skill-card small {
+    margin: 0;
+}
+
+.skills-panel h3 {
+    margin: 16px 0 8px;
+    color: #ddc28e;
+    font-family: "STKaiti", "KaiTi", serif;
+    font-size: 17px;
+    font-weight: 500;
+}
+
+.skills-list {
+    display: grid;
+    gap: 7px;
+}
+
+.skill-card {
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid #30261b;
+    border-radius: 7px;
+    color: #a99475;
+    background: #120e0b;
+    font-size: 11px;
+}
+
+.skill-card > div:first-child {
+    display: grid;
+    gap: 2px;
+}
+
+.skill-card strong {
+    color: #e6d5b4;
+    font-size: 14px;
+}
+
+.skill-card > div:first-child span,
+.skill-card small {
+    color: #80735f;
+    overflow-wrap: anywhere;
+}
+
+.skill-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+}
+
+.prepare-action {
+    justify-self: start;
 }
 
 .item-panel-heading {

@@ -34,6 +34,10 @@ varargs void start_busy(mixed new_busy, mixed new_interrupt)
         error("action: Invalid busy action interrupt handler type.\n");
     interrupt = new_interrupt;
     set_heart_beat(1);
+    if (function_exists("gmcp_status_changed", me))
+        me->gmcp_status_changed();
+    if (function_exists("gmcp_combat_changed", me))
+        me->gmcp_combat_changed();
 }
 
 // This function is for temporary conditions's recovery call_outs, bcz

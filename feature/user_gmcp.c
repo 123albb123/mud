@@ -1,6 +1,9 @@
 #define GMCP_LOG 50
 #define GMCP_ITEMS_VERSION 1
 #define GMCP_ENTITIES_VERSION 1
+#define GMCP_STATE_VERSION 1
+#define GMCP_ENTITY_POLL_INTERVAL 4
+#define GMCP_ACTION_D "/adm/daemons/gmcp_actiond"
 
 nosave string *gmcp_log = ({});
 private nosave mapping gmcp_room_ids = ([]);
@@ -24,8 +27,26 @@ private nosave int gmcp_entities_revision;
 private nosave string gmcp_entities_fingerprint;
 private nosave int gmcp_entities_refresh_pending;
 private nosave int gmcp_entities_polling;
+private nosave int gmcp_vitals_revision;
+private nosave int gmcp_status_revision;
+private nosave int gmcp_combat_revision;
+private nosave int gmcp_skills_revision;
+private nosave int gmcp_combat_actions_revision;
+private nosave string gmcp_vitals_fingerprint;
+private nosave string gmcp_status_fingerprint;
+private nosave string gmcp_combat_fingerprint;
+private nosave string gmcp_skills_fingerprint;
+private nosave string gmcp_combat_actions_fingerprint;
+private nosave int gmcp_vitals_refresh_pending;
+private nosave int gmcp_status_refresh_pending;
+private nosave int gmcp_combat_refresh_pending;
+private nosave int gmcp_skills_refresh_pending;
+private nosave int gmcp_combat_actions_refresh_pending;
+private nosave int gmcp_realtime_polling;
 
 varargs void sendGMCP(mapping data, mixed *modules...);
+private int gmcp_entity_action_available(object entity, string action);
+void gmcp_combat_actions_changed();
 
 private string query_gmcp_room_id(object room)
 {
@@ -599,6 +620,18 @@ private string gmcp_snapshot_fingerprint(mixed value)
     return result;
 }
 
+private string gmcp_state_fingerprint(mapping snapshot)
+{
+    mapping data;
+
+    if (!mapp(snapshot))
+        return "";
+    data = copy(snapshot);
+    map_delete(data, "revision");
+    map_delete(data, "sequence");
+    return gmcp_snapshot_fingerprint(data);
+}
+
 private int gmcp_supports(string package)
 {
     mixed version;
@@ -607,6 +640,663 @@ private int gmcp_supports(string package)
         return 0;
     version = gmcp_support_versions[package];
     return intp(version) && version > 0;
+}
+
+private int gmcp_safe_skill_id(string value)
+{
+    int i;
+
+    if (!stringp(value) || value == "" || strlen(value) > 64)
+        return 0;
+
+    for (i = 0; i < strlen(value); i++)
+    {
+        if ((value[i] >= 'a' && value[i] <= 'z') ||
+            (value[i] >= '0' && value[i] <= '9') ||
+            value[i] == '-' || value[i] == '_')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+private string gmcp_skill_name(string skill)
+{
+    string name;
+
+    if (!gmcp_safe_skill_id(skill))
+        return "";
+    if (catch(name = to_chinese(skill)) || !stringp(name))
+        return skill;
+    return gmcp_item_text(name);
+}
+
+private string gmcp_skill_type(string skill)
+{
+    string type;
+
+    if (!gmcp_safe_skill_id(skill) || file_size(SKILL_D(skill) + ".c") < 0)
+        return "unknown";
+    if (catch(type = SKILL_D(skill)->type()) || !stringp(type))
+        return "unknown";
+    return gmcp_item_text(type);
+}
+
+private string *gmcp_valid_skill_types()
+{
+    mixed types;
+
+    if (catch(types = MASTER_D->query_valid_types()) || !pointerp(types))
+        return ({});
+    return filter_array(types, (: gmcp_safe_skill_id :));
+}
+
+private mapping gmcp_vitals_snapshot()
+{
+    mapping my;
+    object me;
+
+    me = this_object();
+    my = me->query_entire_dbase() || ([]);
+    return ([
+        "version"    : GMCP_STATE_VERSION,
+        "snapshot"   : 1,
+        "revision"   : gmcp_vitals_revision,
+        "sequence"   : gmcp_vitals_revision,
+        "hp"         : my["qi"] || 0,
+        "max_hp"     : my["max_qi"] || 0,
+        "jing"       : my["jing"] || 0,
+        "max_jing"   : my["max_jing"] || 0,
+        "jingli"     : my["jingli"] || 0,
+        "max_jingli" : my["max_jingli"] || 0,
+        "neili"      : my["neili"] || 0,
+        "max_neili"  : my["max_neili"] || 0,
+        "food"       : my["food"] || 0,
+        "max_food"   : me->max_food_capacity(),
+        "water"      : my["water"] || 0,
+        "max_water"  : me->max_water_capacity(),
+        "exp"        : my["combat_exp"] || 0,
+        "pot"        : (int)me->query("potential") -
+                       (int)me->query("learned_points"),
+    ]);
+}
+
+private mixed *gmcp_skill_assignments(mapping assignments)
+{
+    mixed *records;
+    string *slots;
+    string slot;
+    string skill;
+    int i;
+
+    records = ({});
+    if (!mapp(assignments))
+        return records;
+
+    slots = sort_array(keys(assignments), (: strcmp :));
+    for (i = 0; i < sizeof(slots); i++)
+    {
+        slot = slots[i];
+        skill = assignments[slot];
+        if (!gmcp_safe_skill_id(slot) || !gmcp_safe_skill_id(skill))
+            continue;
+        records += ({([
+            "slot"    : slot,
+            "skill_id": skill,
+            "name"    : gmcp_skill_name(skill),
+        ])});
+    }
+    return records;
+}
+
+private mapping gmcp_status_snapshot()
+{
+    mapping my;
+    mapping weapon_data;
+    mapping skill_map;
+    mapping skill_prepare;
+    object me;
+    object weapon;
+    string skill_type;
+    string skill;
+    mixed anger;
+    int ghost;
+    int unconscious;
+
+    me = this_object();
+    my = me->query_entire_dbase() || ([]);
+    ghost = 0;
+    if (function_exists("is_ghost", me))
+        catch(ghost = (int)me->is_ghost());
+    unconscious = !living(me) && !ghost;
+    skill_map = me->query_skill_map();
+    skill_prepare = me->query_skill_prepare();
+    if (!mapp(skill_map))
+        skill_map = ([]);
+    if (!mapp(skill_prepare))
+        skill_prepare = ([]);
+
+    weapon_data = 0;
+    if (objectp(weapon = me->query_temp("weapon")))
+    {
+        skill_type = gmcp_item_query(weapon, "skill_type");
+        skill = stringp(skill_type) ? me->query_skill_mapped(skill_type) : 0;
+        weapon_data = ([
+            "name"      : gmcp_entity_name(weapon),
+            "skill_type": stringp(skill_type) ? skill_type : "",
+        ]);
+        if (gmcp_safe_skill_id(skill))
+        {
+            weapon_data["skill_id"] = skill;
+            weapon_data["skill_name"] = gmcp_skill_name(skill);
+        }
+    }
+
+    anger = 0;
+    if (function_exists("query_craze", me))
+        catch(anger = me->query_craze());
+
+    return ([
+        "version"  : GMCP_STATE_VERSION,
+        "snapshot" : 1,
+        "revision" : gmcp_status_revision,
+        "sequence" : gmcp_status_revision,
+        "busy"     : me->is_busy() ? 1 : 0,
+        "fighting" : me->is_fighting() ? 1 : 0,
+        "can_act"  : (!me->is_busy() && !ghost && !unconscious) ? 1 : 0,
+        // Force a JSON boolean-compatible integer even when an inherited
+        // is_ghost() implementation returns an untyped zero value.
+        "ghost"    : ghost ? 1 : 0,
+        "unconscious": unconscious,
+        "anger"    : intp(anger) ? anger : 0,
+        "food"     : my["food"] || 0,
+        "water"    : my["water"] || 0,
+        "exp"      : my["combat_exp"] || 0,
+        "potential": (int)me->query("potential") -
+                     (int)me->query("learned_points"),
+        "weapon"   : weapon_data,
+        "enabled"  : gmcp_skill_assignments(skill_map),
+        "prepared" : gmcp_skill_assignments(skill_prepare),
+    ]);
+}
+
+private mapping gmcp_skills_snapshot()
+{
+    mapping skills;
+    mapping learned;
+    mapping enabled;
+    mapping prepared;
+    mapping record;
+    mixed *records;
+    string *skill_ids;
+    string *enabled_slots;
+    string *prepared_slots;
+    string *enable_slots;
+    string *basic_types;
+    string skill;
+    mixed valid_enable;
+    int level;
+    int progress;
+    int i;
+
+    skills = this_object()->query_skills();
+    learned = this_object()->query_learned();
+    enabled = this_object()->query_skill_map();
+    prepared = this_object()->query_skill_prepare();
+    if (!mapp(skills))
+        skills = ([]);
+    if (!mapp(learned))
+        learned = ([]);
+    if (!mapp(enabled))
+        enabled = ([]);
+    if (!mapp(prepared))
+        prepared = ([]);
+    basic_types = gmcp_valid_skill_types();
+
+    records = ({});
+    skill_ids = sort_array(keys(skills), (: strcmp :));
+    for (i = 0; i < sizeof(skill_ids); i++)
+    {
+        skill = skill_ids[i];
+        if (!gmcp_safe_skill_id(skill) || !intp(skills[skill]))
+            continue;
+        level = skills[skill];
+        progress = (int)learned[skill] * 100 /
+                   ((level + 1) * (level + 1) + 1);
+        if (progress < 0)
+            progress = 0;
+        if (progress > 100)
+            progress = 100;
+
+        enabled_slots = ({});
+        foreach (string slot, string mapped_skill in enabled)
+            if (mapped_skill == skill && gmcp_safe_skill_id(slot))
+                enabled_slots += ({slot});
+        prepared_slots = ({});
+        foreach (string slot, string prepared_skill in prepared)
+            if (prepared_skill == skill && gmcp_safe_skill_id(slot))
+                prepared_slots += ({slot});
+        enable_slots = ({});
+        foreach (string basic_slot in basic_types)
+        {
+            valid_enable = 0;
+            catch(valid_enable = SKILL_D(skill)->valid_enable(basic_slot));
+            if (basic_slot != skill && this_object()->query_skill(basic_slot, 1) > 0 &&
+                valid_enable)
+                enable_slots += ({basic_slot});
+        }
+
+        record = ([
+            "skill_id"    : skill,
+            "name"        : gmcp_skill_name(skill),
+            "level"       : level,
+            "progress"    : progress,
+            "type"        : gmcp_skill_type(skill),
+            "is_basic"    : member_array(skill, basic_types) != -1,
+            "enabled_for" : sort_array(enabled_slots, (: strcmp :)),
+            "prepared_for": sort_array(prepared_slots, (: strcmp :)),
+            "enable_slots": sort_array(enable_slots, (: strcmp :)),
+        ]);
+        records += ({record});
+    }
+
+    return ([
+        "version" : GMCP_STATE_VERSION,
+        "snapshot": 1,
+        "revision": gmcp_skills_revision,
+        "sequence": gmcp_skills_revision,
+        "skills"  : records,
+    ]);
+}
+
+private string gmcp_combat_health(object target)
+{
+    int max_qi;
+    int eff_qi;
+    int ratio;
+
+    if (!objectp(target) || !living(target))
+        return "unconscious";
+    max_qi = (int)target->query("max_qi");
+    eff_qi = (int)target->query("eff_qi");
+    if (max_qi < 1)
+        return "unknown";
+    ratio = eff_qi * 100 / max_qi;
+    // These ranges intentionally mirror look.c's public wound descriptions;
+    // no numeric health, internal resources, skills, or AI state leave LPC.
+    if (ratio > 90)
+        return "healthy";
+    if (ratio > 60)
+        return "injured";
+    if (ratio > 20)
+        return "badly_injured";
+    return "near_death";
+}
+
+private mapping gmcp_combat_snapshot()
+{
+    object me;
+    object *enemies;
+    object enemy;
+    object primary;
+    mixed *targets;
+    string entity_id;
+    int i;
+
+    me = this_object();
+    me->clean_up_enemy();
+    enemies = me->query_enemy();
+    if (!pointerp(enemies))
+        enemies = ({});
+    targets = ({});
+    primary = me->query_temp("last_opponent");
+
+    for (i = 0; i < sizeof(enemies); i++)
+    {
+        enemy = enemies[i];
+        if (!objectp(enemy) || environment(enemy) != environment(me) ||
+            !gmcp_entity_is_visible(enemy))
+            continue;
+        entity_id = query_gmcp_entity_id(enemy);
+        targets += ({([
+            "entity_id": entity_id,
+            "name"     : gmcp_entity_name(enemy),
+            "relation" : me->is_killing(enemy) ? "kill" : "fight",
+            "health"   : gmcp_combat_health(enemy),
+        ])});
+    }
+    targets = sort_array(targets, (: strcmp($1["entity_id"], $2["entity_id"]) :));
+    if (!objectp(primary) || environment(primary) != environment(me) ||
+        !gmcp_entity_is_visible(primary))
+        primary = sizeof(enemies) ? enemies[0] : 0;
+
+    return ([
+        "version"   : GMCP_STATE_VERSION,
+        "snapshot"  : 1,
+        "revision"  : gmcp_combat_revision,
+        "sequence"  : gmcp_combat_revision,
+        "in_combat" : sizeof(targets) > 0,
+        "busy"      : me->is_busy() ? 1 : 0,
+        "can_act"   : !me->is_busy() && living(me) &&
+                      !(function_exists("is_ghost", me) && me->is_ghost()),
+        "targets"   : targets,
+        "primary_target": objectp(primary) &&
+                          environment(primary) == environment(me) &&
+                          gmcp_entity_is_visible(primary)
+                          ? query_gmcp_entity_id(primary) : "",
+    ]);
+}
+
+private mixed *gmcp_action_files(string skill, string directory)
+{
+    mixed *names;
+
+    if (directory != "" && directory != "perform/" &&
+        directory != "exert/")
+        return ({});
+    if (!gmcp_safe_skill_id(skill))
+        return ({});
+    if (catch(names = call_other(GMCP_ACTION_D, "query_action_names",
+                                 skill, directory)) || !pointerp(names))
+        return ({});
+    return names;
+}
+
+private mixed *gmcp_combat_actions()
+{
+    mapping skill_map;
+    mapping seen;
+    mixed *records;
+    mixed *names;
+    string *slots;
+    string slot;
+    string skill;
+    string name;
+    string action_id;
+    object room;
+    object *nearby;
+    int i;
+    int j;
+
+    skill_map = this_object()->query_skill_map();
+    if (!mapp(skill_map))
+        skill_map = ([]);
+    records = ({});
+    seen = ([]);
+    slots = sort_array(keys(skill_map), (: strcmp :));
+
+    for (i = 0; i < sizeof(slots); i++)
+    {
+        slot = slots[i];
+        skill = skill_map[slot];
+        if (!gmcp_safe_skill_id(slot) || !gmcp_safe_skill_id(skill) ||
+            this_object()->query_skill(skill, 1) < 1)
+            continue;
+        names = gmcp_action_files(skill, "perform/");
+        names += gmcp_action_files(skill, "");
+        foreach (name in names)
+        {
+            action_id = "perform:" + slot + ":" + name;
+            if (seen[action_id])
+                continue;
+            seen[action_id] = 1;
+            records += ({([
+                "action_id"      : action_id,
+                "label"          : gmcp_skill_name(skill) + "·" + name,
+                "kind"           : "perform",
+                "requires_target": 0,
+            ])});
+        }
+    }
+
+    skill = skill_map["force"];
+    if (gmcp_safe_skill_id(skill) && this_object()->query_skill(skill, 1) > 0)
+    {
+        names = gmcp_action_files(skill, "exert/");
+        names += gmcp_action_files(skill, "");
+        names += gmcp_action_files("force", "");
+        foreach (name in names)
+        {
+            action_id = "exert:force:" + name;
+            if (seen[action_id])
+                continue;
+            seen[action_id] = 1;
+            records += ({([
+                "action_id"      : action_id,
+                "label"          : gmcp_skill_name(skill) + "·" + name,
+                "kind"           : "exert",
+                "requires_target": 0,
+            ])});
+        }
+    }
+
+    room = environment(this_object());
+    nearby = objectp(room) ? all_inventory(room) : ({});
+    for (j = 0; j < sizeof(nearby); j++)
+    {
+        if (gmcp_entity_type(nearby[j]) == "npc" &&
+            gmcp_entity_action_available(nearby[j], "fight"))
+        {
+            records += ({([
+                "action_id"      : "fight",
+                "label"          : "切磋",
+                "kind"           : "fight",
+                "requires_target": 1,
+            ])});
+            records += ({([
+                "action_id"      : "kill",
+                "label"          : "攻击",
+                "kind"           : "kill",
+                "requires_target": 1,
+            ])});
+            break;
+        }
+    }
+
+    return sort_array(records, (: strcmp($1["action_id"], $2["action_id"]) :));
+}
+
+private mapping gmcp_combat_actions_snapshot()
+{
+    return ([
+        "version" : GMCP_STATE_VERSION,
+        "snapshot": 1,
+        "revision": gmcp_combat_actions_revision,
+        "sequence": gmcp_combat_actions_revision,
+        "actions" : gmcp_combat_actions(),
+    ]);
+}
+
+varargs void gmcp_refresh_vitals(int force)
+{
+    mapping vitals;
+    string fingerprint;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Char.Vitals")))
+        return;
+    vitals = gmcp_vitals_snapshot();
+    fingerprint = gmcp_state_fingerprint(vitals);
+    if (!force && fingerprint == gmcp_vitals_fingerprint)
+        return;
+    if (fingerprint != gmcp_vitals_fingerprint)
+        gmcp_vitals_revision++;
+    vitals["revision"] = gmcp_vitals_revision;
+    vitals["sequence"] = gmcp_vitals_revision;
+    sendGMCP(vitals, "Char", "Vitals");
+    gmcp_vitals_fingerprint = fingerprint;
+}
+
+varargs void gmcp_refresh_status(int force)
+{
+    mapping status;
+    string fingerprint;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Char.Status")))
+        return;
+    status = gmcp_status_snapshot();
+    fingerprint = gmcp_state_fingerprint(status);
+    if (!force && fingerprint == gmcp_status_fingerprint)
+        return;
+    if (fingerprint != gmcp_status_fingerprint)
+        gmcp_status_revision++;
+    status["revision"] = gmcp_status_revision;
+    status["sequence"] = gmcp_status_revision;
+    sendGMCP(status, "Char", "Status");
+    gmcp_status_fingerprint = fingerprint;
+}
+
+varargs void gmcp_refresh_combat(int force)
+{
+    mapping combat;
+    string fingerprint;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Combat.State")))
+        return;
+    combat = gmcp_combat_snapshot();
+    fingerprint = gmcp_state_fingerprint(combat);
+    if (!force && fingerprint == gmcp_combat_fingerprint)
+        return;
+    if (fingerprint != gmcp_combat_fingerprint)
+        gmcp_combat_revision++;
+    combat["revision"] = gmcp_combat_revision;
+    combat["sequence"] = gmcp_combat_revision;
+    sendGMCP(combat, "Combat", "State");
+    gmcp_combat_fingerprint = fingerprint;
+}
+
+varargs void gmcp_refresh_skills(int force)
+{
+    mapping skills;
+    string fingerprint;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Char.Skills")))
+        return;
+    skills = gmcp_skills_snapshot();
+    fingerprint = gmcp_snapshot_fingerprint(skills["skills"]);
+    if (!force && fingerprint == gmcp_skills_fingerprint)
+        return;
+    if (fingerprint != gmcp_skills_fingerprint)
+        gmcp_skills_revision++;
+    skills["revision"] = gmcp_skills_revision;
+    skills["sequence"] = gmcp_skills_revision;
+    sendGMCP(skills, "Char", "Skills");
+    gmcp_skills_fingerprint = fingerprint;
+}
+
+varargs void gmcp_refresh_combat_actions(int force)
+{
+    mapping actions;
+    string fingerprint;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Combat.Actions")))
+        return;
+    actions = gmcp_combat_actions_snapshot();
+    fingerprint = gmcp_snapshot_fingerprint(actions["actions"]);
+    if (!force && fingerprint == gmcp_combat_actions_fingerprint)
+        return;
+    if (fingerprint != gmcp_combat_actions_fingerprint)
+        gmcp_combat_actions_revision++;
+    actions["revision"] = gmcp_combat_actions_revision;
+    actions["sequence"] = gmcp_combat_actions_revision;
+    sendGMCP(actions, "Combat", "Actions");
+    gmcp_combat_actions_fingerprint = fingerprint;
+}
+
+void gmcp_flush_realtime_refresh()
+{
+    int vitals;
+    int status;
+    int combat;
+    int skills;
+    int actions;
+
+    vitals = gmcp_vitals_refresh_pending;
+    status = gmcp_status_refresh_pending;
+    combat = gmcp_combat_refresh_pending;
+    skills = gmcp_skills_refresh_pending;
+    actions = gmcp_combat_actions_refresh_pending;
+    gmcp_vitals_refresh_pending = 0;
+    gmcp_status_refresh_pending = 0;
+    gmcp_combat_refresh_pending = 0;
+    gmcp_skills_refresh_pending = 0;
+    gmcp_combat_actions_refresh_pending = 0;
+    if (vitals)
+        gmcp_refresh_vitals();
+    if (status)
+        gmcp_refresh_status();
+    if (combat)
+        gmcp_refresh_combat();
+    if (skills)
+        gmcp_refresh_skills();
+    if (actions)
+        gmcp_refresh_combat_actions();
+}
+
+void gmcp_vitals_changed()
+{
+    if (!has_gmcp() || gmcp_vitals_refresh_pending)
+        return;
+    gmcp_vitals_refresh_pending = 1;
+    call_out("gmcp_flush_realtime_refresh", 0);
+}
+
+void gmcp_status_changed()
+{
+    if (!has_gmcp() || gmcp_status_refresh_pending)
+        return;
+    gmcp_status_refresh_pending = 1;
+    call_out("gmcp_flush_realtime_refresh", 0);
+}
+
+void gmcp_combat_changed()
+{
+    if (!has_gmcp() || gmcp_combat_refresh_pending)
+        return;
+    gmcp_combat_refresh_pending = 1;
+    call_out("gmcp_flush_realtime_refresh", 0);
+}
+
+void gmcp_skills_changed()
+{
+    if (!has_gmcp() || gmcp_skills_refresh_pending)
+        return;
+    gmcp_skills_refresh_pending = 1;
+    gmcp_status_changed();
+    gmcp_combat_actions_changed();
+    call_out("gmcp_flush_realtime_refresh", 0);
+}
+
+void gmcp_combat_actions_changed()
+{
+    if (!has_gmcp() || gmcp_combat_actions_refresh_pending)
+        return;
+    gmcp_combat_actions_refresh_pending = 1;
+    call_out("gmcp_flush_realtime_refresh", 0);
+}
+
+void gmcp_poll_realtime_state()
+{
+    gmcp_realtime_polling = 0;
+    if (!interactive(this_object()) || !has_gmcp())
+        return;
+    // Vitals/status/combat are low-cost real-time snapshots. Skills remain
+    // event-driven; actions are recomputed only when a state change is seen.
+    gmcp_refresh_vitals();
+    gmcp_refresh_status();
+    gmcp_refresh_combat();
+    gmcp_realtime_polling = 1;
+    call_out("gmcp_poll_realtime_state", 1);
+}
+
+private void gmcp_start_realtime_poll()
+{
+    if (!interactive(this_object()) || !has_gmcp() || gmcp_realtime_polling)
+        return;
+    if (!gmcp_supports("Char.Vitals") && !gmcp_supports("Char.Status") &&
+        !gmcp_supports("Combat.State"))
+        return;
+    gmcp_realtime_polling = 1;
+    call_out("gmcp_poll_realtime_state", 1);
 }
 
 varargs void gmcp_refresh_inventory(int force)
@@ -697,7 +1387,7 @@ void gmcp_poll_room_entities()
 
     gmcp_refresh_room_entities();
     gmcp_entities_polling = 1;
-    call_out("gmcp_poll_room_entities", 1);
+    call_out("gmcp_poll_room_entities", GMCP_ENTITY_POLL_INTERVAL);
 }
 
 private void gmcp_start_room_entity_poll()
@@ -708,7 +1398,7 @@ private void gmcp_start_room_entity_poll()
         return;
 
     gmcp_entities_polling = 1;
-    call_out("gmcp_poll_room_entities", 1);
+    call_out("gmcp_poll_room_entities", GMCP_ENTITY_POLL_INTERVAL);
 }
 
 void gmcp_flush_room_entity_refresh()
@@ -759,6 +1449,8 @@ void gmcp_equipment_changed()
         return;
 
     gmcp_equipment_refresh_pending = 1;
+    gmcp_status_changed();
+    gmcp_combat_actions_changed();
     call_out("gmcp_flush_item_refresh", 0);
 }
 
@@ -851,10 +1543,14 @@ private void gmcp_enable()
         "version" : GMCP_ITEMS_VERSION,
         "supports": ([
             "Char.Vitals"    : 1,
+            "Char.Status"    : GMCP_STATE_VERSION,
             "Room.Info"      : 1,
             "Room.Entities"  : GMCP_ENTITIES_VERSION,
             "Char.Inventory" : GMCP_ITEMS_VERSION,
             "Char.Equipment": GMCP_ITEMS_VERSION,
+            "Char.Skills"    : GMCP_STATE_VERSION,
+            "Combat.State"   : GMCP_STATE_VERSION,
+            "Combat.Actions" : GMCP_STATE_VERSION,
         ]),
     ]), "Server", "Hello");
 }
@@ -1352,6 +2048,235 @@ private void gmcp_handle_web_entity_give(string payload)
     gmcp_room_entities_changed();
 }
 
+private int gmcp_enable_slot_allowed(string slot)
+{
+    return member_array(slot, ({
+        "unarmed", "sword", "blade", "staff", "hammer", "club",
+        "throwing", "force", "parry", "dodge", "magic", "whip",
+        "dagger", "finger", "hand", "cuff", "claw", "strike",
+        "medical", "poison", "cooking", "chuixiao-jifa",
+        "guzheng-jifa", "tanqin-jifa",
+    })) != -1;
+}
+
+private int gmcp_skill_owned(string skill)
+{
+    mapping skills;
+
+    if (!gmcp_safe_skill_id(skill))
+        return 0;
+    skills = this_object()->query_skills();
+    return mapp(skills) && intp(skills[skill]) && skills[skill] > 0;
+}
+
+private void gmcp_skill_action_failed(string message)
+{
+    write(message + "\n");
+    gmcp_refresh_skills(1);
+    gmcp_refresh_status(1);
+    gmcp_refresh_combat_actions(1);
+}
+
+private void gmcp_handle_web_skill_action(string payload)
+{
+    mixed decoded;
+    mapping data;
+    string skill;
+    string action;
+    string slot;
+    mixed valid_enable;
+    mixed valid_enable_error;
+    mixed result;
+
+    if (catch(decoded = json_decode(payload)) || !mapp(decoded))
+    {
+        gmcp_skill_action_failed("技能操作请求无效。" );
+        return;
+    }
+    data = decoded;
+    skill = data["skill_id"];
+    action = data["action"];
+    slot = data["slot"];
+    if (!gmcp_skill_owned(skill) ||
+        (action != "enable" && action != "prepare"))
+    {
+        gmcp_skill_action_failed("技能操作不被允许。" );
+        return;
+    }
+    if (this_object()->is_busy())
+    {
+        gmcp_skill_action_failed("你正忙于上一个动作，暂时无法修改技能状态。" );
+        return;
+    }
+
+    if (action == "enable")
+    {
+        valid_enable = 0;
+        valid_enable_error = 0;
+        if (!stringp(slot) || !gmcp_enable_slot_allowed(slot) ||
+            !gmcp_skill_owned(slot) ||
+            ((valid_enable_error =
+              catch(valid_enable = SKILL_D(skill)->valid_enable(slot))) == 0 &&
+             !valid_enable))
+        {
+            gmcp_skill_action_failed("该技能当前不能激发到这个用途。" );
+            return;
+        }
+        if (catch(result = call_other("/cmds/skill/enable", "main",
+                                      this_object(), slot + " " + skill)))
+        {
+            gmcp_skill_action_failed("技能激发失败，请查看当前状态。" );
+            return;
+        }
+    }
+    else
+    {
+        if (slot)
+        {
+            gmcp_skill_action_failed("准备技能不接受额外用途参数。" );
+            return;
+        }
+        if (catch(result = call_other("/cmds/skill/prepare", "main",
+                                      this_object(), skill)))
+        {
+            gmcp_skill_action_failed("技能准备失败，请查看当前状态。" );
+            return;
+        }
+    }
+
+    if (!result)
+        write("技能操作未能完成，请查看原有游戏文字。\n");
+    gmcp_skills_changed();
+}
+
+private mapping gmcp_find_combat_action(string action_id)
+{
+    mixed *actions;
+    mapping action;
+    int i;
+
+    if (!stringp(action_id) || strlen(action_id) > 160 ||
+        strsrch(action_id, "\n") != -1 || strsrch(action_id, "\r") != -1)
+        return 0;
+    actions = gmcp_combat_actions();
+    for (i = 0; i < sizeof(actions); i++)
+    {
+        action = actions[i];
+        if (mapp(action) && action["action_id"] == action_id)
+            return action;
+    }
+    return 0;
+}
+
+private void gmcp_combat_action_failed(string message)
+{
+    write(message + "\n");
+    gmcp_refresh_combat(1);
+    gmcp_refresh_combat_actions(1);
+}
+
+private void gmcp_handle_web_combat_action(string payload)
+{
+    mixed decoded;
+    mapping data;
+    mapping action;
+    object target;
+    string action_id;
+    string target_entity_id;
+    string *parts;
+    mixed result;
+
+    if (catch(decoded = json_decode(payload)) || !mapp(decoded))
+    {
+        gmcp_combat_action_failed("战斗操作请求无效。" );
+        return;
+    }
+    data = decoded;
+    action_id = data["action_id"];
+    target_entity_id = data["target_entity_id"];
+    action = gmcp_find_combat_action(action_id);
+    if (!mapp(action))
+    {
+        gmcp_combat_action_failed("该战斗动作当前不可用。" );
+        return;
+    }
+    if (this_object()->is_busy())
+    {
+        gmcp_combat_action_failed("你正忙于上一个动作，暂时无法执行战斗操作。" );
+        return;
+    }
+
+    if (action["requires_target"])
+    {
+        if (!stringp(target_entity_id) ||
+            strsrch(target_entity_id, "\n") != -1 ||
+            strsrch(target_entity_id, "\r") != -1)
+        {
+            gmcp_combat_action_failed("这个战斗动作需要附近目标。" );
+            return;
+        }
+        target = gmcp_find_entity(target_entity_id);
+        if (!objectp(target) || gmcp_entity_type(target) != "npc" ||
+            !gmcp_entity_action_available(target, action["kind"]))
+        {
+            gmcp_combat_action_failed("该目标已经不在附近或不能执行这个动作。" );
+            return;
+        }
+        result = gmcp_run_entity_action(target, action["kind"], "");
+    }
+    else
+    {
+        if (target_entity_id)
+        {
+            gmcp_combat_action_failed("当前可发现招式不接受客户端指定目标。" );
+            return;
+        }
+        if (action["kind"] == "perform")
+        {
+            parts = explode(action_id, ":");
+            if (sizeof(parts) != 3)
+            {
+                gmcp_combat_action_failed("该战斗动作当前不可用。" );
+                return;
+            }
+            if (catch(result = call_other("/cmds/skill/perform", "main",
+                                          this_object(), parts[1] + "." +
+                                          parts[2])))
+            {
+                gmcp_combat_action_failed("外功施展失败，请查看当前状态。" );
+                return;
+            }
+        }
+        else if (action["kind"] == "exert")
+        {
+            parts = explode(action_id, ":");
+            if (sizeof(parts) != 3 || parts[1] != "force")
+            {
+                gmcp_combat_action_failed("该战斗动作当前不可用。" );
+                return;
+            }
+            if (catch(result = call_other("/cmds/skill/exert", "main",
+                                          this_object(), parts[2])))
+            {
+                gmcp_combat_action_failed("内功施展失败，请查看当前状态。" );
+                return;
+            }
+        }
+        else
+        {
+            gmcp_combat_action_failed("该战斗动作当前不可用。" );
+            return;
+        }
+    }
+
+    if (!result)
+        write("战斗动作未能完成，请查看原有游戏文字。\n");
+    gmcp_vitals_changed();
+    gmcp_status_changed();
+    gmcp_combat_changed();
+    gmcp_combat_actions_changed();
+}
+
 // gmcp - provides an interface to GMCP data received from the client
 void gmcp(string req)
 {
@@ -1390,30 +2315,16 @@ void gmcp(string req)
         {
             gmcp_support_versions = gmcp_parse_supports(decoded);
             gmcp_start_room_entity_poll();
+            gmcp_start_realtime_poll();
         }
     }
     else if (package == "Char.Vitals.Get")
     {
-        object ob = this_object();
-        mapping my = ob->query_entire_dbase() || ([]);
-        // 很奇怪的问题, 得加` || 0`, 否则对0值客户端可能是<userdata 1>
-        mapping data = ([
-            "hp"         : my["qi"] || 0,
-            "max_hp"     : my["max_qi"] || 0,
-            "jing"       : my["jing"] || 0,
-            "max_jing"   : my["max_jing"] || 0,
-            "jingli"     : my["jingli"] || 0,
-            "max_jingli" : my["max_jingli"] || 0,
-            "neili"      : my["neili"] || 0,
-            "max_neili"  : my["max_neili"] || 0,
-            "food"       : my["food"] || 0,
-            "max_food"   : ob->max_food_capacity(),
-            "water"      : my["water"] || 0,
-            "max_water"  : ob->max_water_capacity(),
-            "exp"        : my["combat_exp"] || 0,
-            "pot"        : (int)ob->query("potential") - (int)ob->query("learned_points"),
-        ]);
-        sendGMCP(data, "Char", "Vitals");
+        gmcp_refresh_vitals(1);
+    }
+    else if (package == "Char.Status.Get")
+    {
+        gmcp_refresh_status(1);
     }
     else if (package == "Room.Info.Get")
     {
@@ -1457,6 +2368,18 @@ void gmcp(string req)
     {
         gmcp_refresh_equipment(1);
     }
+    else if (package == "Char.Skills.Get")
+    {
+        gmcp_refresh_skills(1);
+    }
+    else if (package == "Combat.State.Get")
+    {
+        gmcp_refresh_combat(1);
+    }
+    else if (package == "Combat.Actions.Get")
+    {
+        gmcp_refresh_combat_actions(1);
+    }
     else if (package == "Web.Item.Action")
     {
         gmcp_handle_web_item_action(payload);
@@ -1468,5 +2391,13 @@ void gmcp(string req)
     else if (package == "Web.Entity.Give")
     {
         gmcp_handle_web_entity_give(payload);
+    }
+    else if (package == "Web.Skill.Action")
+    {
+        gmcp_handle_web_skill_action(payload);
+    }
+    else if (package == "Web.Combat.Action")
+    {
+        gmcp_handle_web_combat_action(payload);
     }
 }

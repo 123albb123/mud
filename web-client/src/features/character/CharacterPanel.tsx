@@ -1,6 +1,7 @@
-import type { CharacterVitals } from '../../protocol/gmcp/gmcp';
+import type { CharacterStatus, CharacterVitals } from '../../protocol/gmcp/gmcp';
 
 interface CharacterPanelProps {
+    status?: CharacterStatus | null;
     vitals: CharacterVitals | null;
 }
 
@@ -11,7 +12,7 @@ const resources = [
     { label: '内力', current: 'neili', maximum: 'max_neili', tone: 'gold' },
 ] as const;
 
-export const CharacterPanel = ({ vitals }: CharacterPanelProps) => (
+export const CharacterPanel = ({ status, vitals }: CharacterPanelProps) => (
     <section className="panel character-panel" aria-labelledby="character-title">
         <div className="panel-heading">
             <span className="seal">人</span>
@@ -37,6 +38,16 @@ export const CharacterPanel = ({ vitals }: CharacterPanelProps) => (
                     </div>
                 );
             })}
+        </div>
+        <div className="character-state" aria-label="人物实时状态">
+            {status?.busy && <span className="state-chip danger">忙乱</span>}
+            {status?.fighting && <span className="state-chip">战斗中</span>}
+            {status?.ghost && <span className="state-chip danger">鬼魂</span>}
+            {status?.unconscious && <span className="state-chip danger">昏迷</span>}
+            {status && !status.busy && !status.fighting && !status.ghost && !status.unconscious && (
+                <span className="state-chip">可行动</span>
+            )}
+            {status?.weapon && <span className="state-chip weapon-chip">兵器：{status.weapon.name}</span>}
         </div>
     </section>
 );

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { CharacterPanel } from '../features/character/CharacterPanel';
+import { CombatPanel } from '../features/combat/CombatPanel';
 import { EquipmentPanel } from '../features/equipment/EquipmentPanel';
 import { InventoryPanel } from '../features/inventory/InventoryPanel';
 import { RoomEntities } from '../features/room/RoomEntities';
 import { RoomPanel } from '../features/room/RoomPanel';
+import { SkillsPanel } from '../features/skills/SkillsPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
 import { Terminal } from '../features/terminal/Terminal';
 import { defaultMudUrl, useMudClient } from '../stores/useMudClient';
@@ -20,7 +22,7 @@ export const App = () => {
     const client = useMudClient();
     const [url, setUrl] = useState(defaultMudUrl);
     const [showDebug, setShowDebug] = useState(false);
-    const [activePanel, setActivePanel] = useState<'inventory' | 'equipment' | null>(null);
+    const [activePanel, setActivePanel] = useState<'inventory' | 'equipment' | 'skills' | null>(null);
     const autoConnectStarted = useRef(false);
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
@@ -74,7 +76,15 @@ export const App = () => {
 
             <main className="game-main">
                 <aside className="sidebar">
-                    <CharacterPanel vitals={client.vitals} />
+                    <CharacterPanel status={client.status} vitals={client.vitals} />
+                    <CombatPanel
+                        actions={client.combatActions}
+                        combat={client.combat}
+                        disabled={!connected}
+                        entities={client.entities}
+                        onAction={client.sendCombatAction}
+                        status={client.status}
+                    />
                     <RoomPanel room={client.room} disabled={!connected} onMove={client.sendCommand} />
                     <RoomEntities
                         disabled={!connected}
@@ -102,6 +112,15 @@ export const App = () => {
                             <span>装备</span>
                             <span>{client.equipment.length}</span>
                         </button>
+                        <button
+                            aria-pressed={activePanel === 'skills'}
+                            className={activePanel === 'skills' ? 'active' : ''}
+                            onClick={() => setActivePanel(activePanel === 'skills' ? null : 'skills')}
+                            type="button"
+                        >
+                            <span>技能</span>
+                            <span>{client.skills.length}</span>
+                        </button>
                     </div>
                 </aside>
                 <Terminal segments={client.segments} />
@@ -124,6 +143,20 @@ export const App = () => {
                             onAction={client.sendItemAction}
                             slotOrder={client.equipmentSlotOrder}
                             slots={client.equipment}
+                        />
+                    </aside>
+                )}
+                {activePanel === 'skills' && (
+                    <aside className="item-drawer skills-drawer" aria-label="技能面板">
+                        <div className="drawer-heading">
+                            <strong>技能</strong>
+                            <button onClick={() => setActivePanel(null)} type="button">关闭</button>
+                        </div>
+                        <SkillsPanel
+                            disabled={!connected || client.status?.can_act === false}
+                            onAction={client.sendSkillAction}
+                            skills={client.skills}
+                            status={client.status}
                         />
                     </aside>
                 )}

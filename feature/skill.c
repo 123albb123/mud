@@ -11,6 +11,15 @@ mapping skill_map;
 mapping skill_prepare;
 mapping wprepare;
 
+private void gmcp_skill_state_changed()
+{
+    object me;
+
+    me = this_object();
+    if (function_exists("gmcp_skills_changed", me))
+        me->gmcp_skills_changed();
+}
+
 mapping query_skills() { return skills; }
 mapping query_learned() { return learned; }
 varargs void map_skill(string skill, string mapped_to);
@@ -25,6 +34,7 @@ void set_skill(string skill, int val)
         skills = ([ skill: val ]);
     else
         skills[skill] = val;
+    gmcp_skill_state_changed();
 }
 
 int delete_skill(string skill)
@@ -49,8 +59,10 @@ int delete_skill(string skill)
         if (mapp(learned))
         {
             map_delete(learned, skill);
+            gmcp_skill_state_changed();
             return undefinedp(learned[skill]);
         }
+        gmcp_skill_state_changed();
         return undefinedp(skills[skill]);
     }
     return 0;
@@ -64,6 +76,7 @@ varargs void map_skill(string skill, string mapped_to)
     {
         if ( skill_prepare ) map_delete(skill_prepare, skill);
         map_delete(skill_map, skill);
+        gmcp_skill_state_changed();
         return;
     }
 
@@ -79,6 +92,7 @@ varargs void map_skill(string skill, string mapped_to)
         skill_map = ([ skill: mapped_to ]);
     else
         skill_map[skill] = mapped_to;
+    gmcp_skill_state_changed();
 }
 
 // This function 'prepare' a skill <skill> to another skill <mapped_to>.
@@ -88,6 +102,7 @@ varargs void prepare_skill(string skill, string mapped_to)
     if (! mapped_to && mapp(skill_prepare))
     {
         map_delete(skill_prepare, skill);
+        gmcp_skill_state_changed();
         return;
     }
 
@@ -102,6 +117,7 @@ varargs void prepare_skill(string skill, string mapped_to)
         skill_prepare = ([ skill: mapped_to ]);
     else
         skill_prepare[skill] = mapped_to;
+    gmcp_skill_state_changed();
 }
 
 varargs void prepare_wskill(string skill, string mapped_to)
@@ -109,6 +125,7 @@ varargs void prepare_wskill(string skill, string mapped_to)
     if (! mapped_to && mapp(wprepare))
     {
         map_delete(wprepare, skill);
+        gmcp_skill_state_changed();
         return;
     }
 
@@ -123,6 +140,7 @@ varargs void prepare_wskill(string skill, string mapped_to)
         wprepare = ([ skill: mapped_to ]);
     else
         wprepare[skill] = mapped_to;
+    gmcp_skill_state_changed();
 }
 
 
@@ -211,6 +229,8 @@ int skill_death_penalty()
     skill_map = 0;
     skill_prepare = 0;
 
+    gmcp_skill_state_changed();
+
     return 1;
 }
 
@@ -250,6 +270,7 @@ int skill_expell_penalty()
 
     skill_map = 0;
     skill_prepare = 0;
+    gmcp_skill_state_changed();
 }
 
 int can_improve_skill(string skill)
@@ -341,4 +362,5 @@ varargs void improve_skill(string skill, int amount, int weak_mode)
                 "」进步了！\n" NOR);
         SKILL_D(skill)->skill_improved(this_object());
     }
+    gmcp_skill_state_changed();
 }

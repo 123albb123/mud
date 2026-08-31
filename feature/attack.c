@@ -22,6 +22,21 @@ nosave object competitor = 0;
 
 // prototypes
 
+private void gmcp_combat_state_changed(object other)
+{
+    object me;
+
+    me = this_object();
+    if (function_exists("gmcp_combat_changed", me))
+        me->gmcp_combat_changed();
+    if (function_exists("gmcp_status_changed", me))
+        me->gmcp_status_changed();
+    if (objectp(other) && function_exists("gmcp_combat_changed", other))
+        other->gmcp_combat_changed();
+    if (objectp(other) && function_exists("gmcp_status_changed", other))
+        other->gmcp_status_changed();
+}
+
 object *query_enemy()  { return enemy; }
 string *query_killer() { return killer; }
 string *query_want()   { return want_kills; }
@@ -100,6 +115,7 @@ void fight_ob(object ob)
     set_heart_beat(1);
 
     enemy += ({ ob });
+    gmcp_combat_state_changed(ob);
     if (this_object()->is_guarder() &&
         is_killing(ob->query("id")))
     {
@@ -140,6 +156,7 @@ void kill_ob(object ob)
     if (member_array(ob->query("id"), killer) == -1)
     {
         killer += ({ob->query("id")});
+        gmcp_combat_state_changed(ob);
         tell_object(ob, HIR "看起来" + this_object()->name() + HIR "想杀死你！\n" NOR);
     }
 
@@ -233,6 +250,7 @@ void want_kill(object ob)
 void clean_up_enemy()
 {
     int i;
+    int changed;
 
     if (i = sizeof(enemy))
     {
@@ -241,9 +259,14 @@ void clean_up_enemy()
             if (! objectp(enemy[i]) ||
                 environment(enemy[i]) != environment() ||
                 (! living(enemy[i]) && ! is_killing(enemy[i]->query("id"))))
-            enemy[i] = 0;
+            {
+                enemy[i] = 0;
+                changed = 1;
+            }
         }
         enemy -= ({ 0 });
+        if (changed)
+            gmcp_combat_state_changed(0);
     }
 }
 
@@ -267,6 +290,7 @@ int remove_enemy(object ob)
     enemy -= ({ ob });
     if (! (i = sizeof(enemy)))
         delete_temp("combat_time"); //combat_time 玩家战斗时间
+    gmcp_combat_state_changed(ob);
     return 1;
 }
 
@@ -292,6 +316,7 @@ int remove_killer(object ob)
 void remove_all_enemy(int force)
 {
     int i;
+    int changed;
     delete_temp("combat_time"); //combat_time 玩家战斗时间
     if (! (i = sizeof(enemy)))
         return;
@@ -307,11 +332,14 @@ void remove_all_enemy(int force)
             {
                 enemy[i]->remove_enemy(this_object());
                 enemy[i] = 0;;
+                changed = 1;
             }
         }
     }
 
     enemy -= ({ 0 });
+    if (changed)
+        gmcp_combat_state_changed(0);
 }
 
 // Not want to kill anyone
@@ -333,6 +361,7 @@ void remove_all_killer()
     killer = ({ });
 
     enemy -= ({ 0 });
+    gmcp_combat_state_changed(0);
 }
 
 object query_competitor()
@@ -456,13 +485,17 @@ void reset_action()
 int attack()
 {
     object opponent;
+    object last_opponent;
 
     clean_up_enemy();
 
     opponent = select_opponent();
     if (objectp(opponent))
     {
+        last_opponent = query_temp("last_opponent");
         set_temp("last_opponent", opponent);
+        if (last_opponent != opponent)
+            gmcp_combat_state_changed(opponent);
         add_temp("combat_time", 1);
         COMBAT_D->fight(this_object(), opponent);
         return 1;

@@ -23,6 +23,19 @@ int ghost = 0;
 
 int is_ghost() { return ghost; }
 
+private void gmcp_damage_changed()
+{
+    object me;
+
+    me = this_object();
+    if (function_exists("gmcp_vitals_changed", me))
+        me->gmcp_vitals_changed();
+    if (function_exists("gmcp_status_changed", me))
+        me->gmcp_status_changed();
+    if (function_exists("gmcp_combat_changed", me))
+        me->gmcp_combat_changed();
+}
+
 varargs int receive_damage(string type, int damage, object who)
 {
     int val;
@@ -49,6 +62,7 @@ varargs int receive_damage(string type, int damage, object who)
         set(type, -1);
 
     set_heart_beat(1);
+    gmcp_damage_changed();
 
     return damage;
 }
@@ -85,6 +99,7 @@ varargs int receive_wound(string type, int damage, object who)
         set(type, val);
 
     set_heart_beat(1);
+    gmcp_damage_changed();
 
     return damage;
 }
@@ -105,6 +120,7 @@ int receive_heal(string type, int heal)
     else
         set(type, val);
 
+    gmcp_damage_changed();
     return heal;
 }
 
@@ -123,11 +139,13 @@ int receive_curing(string type, int heal)
     if (val + heal > max)
     {
         set("eff_" + type, max);
+        gmcp_damage_changed();
         return max - val;
     }
     else
     {
         set("eff_" + type, val + heal);
+        gmcp_damage_changed();
         return heal;
     }
 }
@@ -265,6 +283,7 @@ void unconcious()
     set("jing", 0);
     set("qi", 0);
     set_temp("block_msg/all", 1);
+    gmcp_damage_changed();
 
     call_out("revive", random(100 - query("con")) + 30);
     COMBAT_D->announce(me, "unconcious");
@@ -310,6 +329,7 @@ varargs void revive(int quiet)
 
     last_damage_from = 0;
     last_damage_name = 0;
+    gmcp_damage_changed();
 }
 
 varargs void die(object killer)
@@ -429,6 +449,7 @@ varargs void die(object killer)
     defeated_by = 0;
     defeated_by_who = 0;
     me->remove_all_killer();
+    gmcp_damage_changed();
 
     if (environment())
     {
@@ -459,6 +480,7 @@ void reincarnate()
     ghost = 0;
     set("eff_jing", query("max_jing"));
     set("eff_qi", query("max_qi"));
+    gmcp_damage_changed();
 }
 
 int max_food_capacity()

@@ -9,10 +9,20 @@ import {
     toWebEntityActionRequest,
     toWebEntityGiveRequest,
     toWebItemActionRequest,
+    toWebSkillActionRequest,
+    toWebCombatActionRequest,
     toCharacterVitals,
+    toCharacterStatus,
+    toCombatActionsSnapshot,
+    toCombatStateSnapshot,
     toEquipmentSnapshot,
     toInventorySnapshot,
     toRoomInfo,
+    toSkillsSnapshot,
+    type CharacterStatus,
+    type CharacterSkill,
+    type CombatAction,
+    type CombatStateSnapshot,
     type CharacterVitals,
     type EquipmentSlot,
     type InventoryItem,
@@ -41,6 +51,10 @@ export const useMudClient = () => {
         { text: '连接江湖后，炎黄原版文字会显示在这里。\n', bold: false, foreground: 'bright-black' },
     ]);
     const [vitals, setVitals] = useState<CharacterVitals | null>(null);
+    const [status, setStatus] = useState<CharacterStatus | null>(null);
+    const [combat, setCombat] = useState<CombatStateSnapshot | null>(null);
+    const [skills, setSkills] = useState<CharacterSkill[]>([]);
+    const [combatActions, setCombatActions] = useState<CombatAction[]>([]);
     const [room, setRoom] = useState<RoomInfo | null>(null);
     const [entities, setEntities] = useState<RoomEntity[]>([]);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -56,6 +70,11 @@ export const useMudClient = () => {
     const inventoryRevisionRef = useRef(-1);
     const equipmentRevisionRef = useRef(-1);
     const entitiesRevisionRef = useRef(-1);
+    const vitalsRevisionRef = useRef(-1);
+    const statusRevisionRef = useRef(-1);
+    const combatRevisionRef = useRef(-1);
+    const skillsRevisionRef = useRef(-1);
+    const combatActionsRevisionRef = useRef(-1);
     const gmcpStateRequestedRef = useRef(false);
 
     const requestGMCPState = useCallback(() => {
@@ -99,8 +118,35 @@ export const useMudClient = () => {
             requestGMCPState();
         } else if (message.packageName === 'Char.Vitals') {
             const nextVitals = toCharacterVitals(message.payload);
-            if (nextVitals) {
+            if (nextVitals && (nextVitals.revision === undefined || nextVitals.revision >= vitalsRevisionRef.current)) {
+                if (nextVitals.revision !== undefined) {
+                    vitalsRevisionRef.current = nextVitals.revision;
+                }
                 setVitals(nextVitals);
+            }
+        } else if (message.packageName === 'Char.Status') {
+            const nextStatus = toCharacterStatus(message.payload);
+            if (nextStatus && nextStatus.revision >= statusRevisionRef.current) {
+                statusRevisionRef.current = nextStatus.revision;
+                setStatus(nextStatus);
+            }
+        } else if (message.packageName === 'Combat.State') {
+            const nextCombat = toCombatStateSnapshot(message.payload);
+            if (nextCombat && nextCombat.revision >= combatRevisionRef.current) {
+                combatRevisionRef.current = nextCombat.revision;
+                setCombat(nextCombat);
+            }
+        } else if (message.packageName === 'Char.Skills') {
+            const nextSkills = toSkillsSnapshot(message.payload);
+            if (nextSkills && nextSkills.revision >= skillsRevisionRef.current) {
+                skillsRevisionRef.current = nextSkills.revision;
+                setSkills(nextSkills.skills);
+            }
+        } else if (message.packageName === 'Combat.Actions') {
+            const nextActions = toCombatActionsSnapshot(message.payload);
+            if (nextActions && nextActions.revision >= combatActionsRevisionRef.current) {
+                combatActionsRevisionRef.current = nextActions.revision;
+                setCombatActions(nextActions.actions);
             }
         } else if (message.packageName === 'Room.Info') {
             const nextRoom = toRoomInfo(message.payload);
@@ -155,8 +201,17 @@ export const useMudClient = () => {
                     inventoryRevisionRef.current = -1;
                     equipmentRevisionRef.current = -1;
                     entitiesRevisionRef.current = -1;
+                    vitalsRevisionRef.current = -1;
+                    statusRevisionRef.current = -1;
+                    combatRevisionRef.current = -1;
+                    skillsRevisionRef.current = -1;
+                    combatActionsRevisionRef.current = -1;
                     gmcpStateRequestedRef.current = false;
                     setVitals(null);
+                    setStatus(null);
+                    setCombat(null);
+                    setSkills([]);
+                    setCombatActions([]);
                     setRoom(null);
                     setEntities([]);
                     setInventory([]);
@@ -164,6 +219,10 @@ export const useMudClient = () => {
                     setEquipmentSlotOrder([]);
                 } else if (state === 'closed') {
                     setVitals(null);
+                    setStatus(null);
+                    setCombat(null);
+                    setSkills([]);
+                    setCombatActions([]);
                     setRoom(null);
                     setEntities([]);
                     setInventory([]);
@@ -198,6 +257,10 @@ export const useMudClient = () => {
 
     const connect = useCallback((url: string) => {
         setVitals(null);
+        setStatus(null);
+        setCombat(null);
+        setSkills([]);
+        setCombatActions([]);
         setRoom(null);
         setEntities([]);
         setInventory([]);
@@ -206,6 +269,11 @@ export const useMudClient = () => {
         inventoryRevisionRef.current = -1;
         equipmentRevisionRef.current = -1;
         entitiesRevisionRef.current = -1;
+        vitalsRevisionRef.current = -1;
+        statusRevisionRef.current = -1;
+        combatRevisionRef.current = -1;
+        skillsRevisionRef.current = -1;
+        combatActionsRevisionRef.current = -1;
         gmcpStateRequestedRef.current = false;
         setServerSensitive(false);
         connectionRef.current?.connect(url, ['telnet']);
@@ -248,11 +316,33 @@ export const useMudClient = () => {
         parser.sendGMCP('Web.Entity.Give', request);
     }, []);
 
+    const sendSkillAction = useCallback((skillId: string, action: 'enable' | 'prepare', slot?: string) => {
+        const parser = parserRef.current;
+        const request = toWebSkillActionRequest(skillId, action, slot);
+        if (!parser || !request) {
+            return;
+        }
+        parser.sendGMCP('Web.Skill.Action', request);
+    }, []);
+
+    const sendCombatAction = useCallback((actionId: string, targetEntityId?: string) => {
+        const parser = parserRef.current;
+        const request = toWebCombatActionRequest(actionId, targetEntityId);
+        if (!parser || !request) {
+            return;
+        }
+        parser.sendGMCP('Web.Combat.Action', request);
+    }, []);
+
     return {
         connectionState,
         connectionDetail,
         segments,
         vitals,
+        status,
+        combat,
+        skills,
+        combatActions,
         room,
         entities,
         inventory,
@@ -266,5 +356,7 @@ export const useMudClient = () => {
         sendItemAction,
         sendEntityAction,
         sendEntityGive,
+        sendSkillAction,
+        sendCombatAction,
     };
 };
