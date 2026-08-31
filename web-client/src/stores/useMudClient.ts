@@ -3,8 +3,13 @@ import { AnsiParser, type AnsiSegment } from '../protocol/ansi/AnsiParser';
 import {
     parseGMCP,
     toCharacterVitals,
+    toEquipmentSnapshot,
+    toInventorySnapshot,
     toRoomInfo,
     type CharacterVitals,
+    type EquipmentSlot,
+    type GMCPAction,
+    type InventoryItem,
     type RoomInfo,
 } from '../protocol/gmcp/gmcp';
 import { TelnetParser } from '../protocol/telnet/TelnetParser';
@@ -30,6 +35,9 @@ export const useMudClient = () => {
     ]);
     const [vitals, setVitals] = useState<CharacterVitals | null>(null);
     const [room, setRoom] = useState<RoomInfo | null>(null);
+    const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [equipment, setEquipment] = useState<EquipmentSlot[]>([]);
+    const [equipmentSlotOrder, setEquipmentSlotOrder] = useState<string[]>([]);
     const [serverSensitive, setServerSensitive] = useState(false);
     const [debugEntries, setDebugEntries] = useState<ProtocolDebugEntry[]>([]);
     const connectionRef = useRef<MudConnection | null>(null);
@@ -37,6 +45,28 @@ export const useMudClient = () => {
     const decoderRef = useRef(new TextDecoder('utf-8'));
     const ansiRef = useRef(new AnsiParser());
     const debugSequence = useRef(0);
+    const inventoryRevisionRef = useRef(-1);
+    const equipmentRevisionRef = useRef(-1);
+
+    const requestGMCPState = useCallback(() => {
+        const parser = parserRef.current;
+        if (!parser) {
+            return;
+        }
+        parser.sendGMCP('Core.Supports.Set', {
+            version: 1,
+            packages: {
+                'Char.Vitals': 1,
+                'Room.Info': 1,
+                'Char.Inventory': 1,
+                'Char.Equipment': 1,
+            },
+        });
+        parser.sendGMCP('Char.Vitals.Get');
+        parser.sendGMCP('Room.Info.Get');
+        parser.sendGMCP('Char.Inventory.Get');
+        parser.sendGMCP('Char.Equipment.Get');
+    }, []);
 
     const appendDebug = useCallback((message: string) => {
         setDebugEntries((current) => [...current.slice(-199), {
@@ -65,8 +95,7 @@ export const useMudClient = () => {
         }
 
         if (message.packageName === 'Core.Hello') {
-            parserRef.current?.sendGMCP('Char.Vitals.Get');
-            parserRef.current?.sendGMCP('Room.Info.Get');
+            requestGMCPState();
         } else if (message.packageName === 'Char.Vitals') {
             const nextVitals = toCharacterVitals(message.payload);
             if (nextVitals) {
@@ -77,14 +106,28 @@ export const useMudClient = () => {
             if (nextRoom) {
                 setRoom(nextRoom);
             }
+        } else if (message.packageName === 'Char.Inventory') {
+            const nextInventory = toInventorySnapshot(message.payload);
+            if (nextInventory && nextInventory.revision >= inventoryRevisionRef.current) {
+                inventoryRevisionRef.current = nextInventory.revision;
+                setInventory(nextInventory.items);
+            }
+        } else if (message.packageName === 'Char.Equipment') {
+            const nextEquipment = toEquipmentSnapshot(message.payload);
+            if (nextEquipment && nextEquipment.revision >= equipmentRevisionRef.current) {
+                equipmentRevisionRef.current = nextEquipment.revision;
+                setEquipment(nextEquipment.slots);
+                setEquipmentSlotOrder(nextEquipment.slot_order);
+            }
         }
-    }, [appendDebug]);
+    }, [appendDebug, requestGMCPState]);
 
     useEffect(() => {
         const parser = new TelnetParser({
             send: (bytes) => connectionRef.current?.sendBytes(bytes),
             onText: (bytes) => appendText(decoderRef.current.decode(bytes, { stream: true })),
             onGMCP: handleGMCP,
+            onGMCPEnabled: requestGMCPState,
             onEcho: setServerSensitive,
             onDebug: appendDebug,
             terminalType: 'YH-WEB-STAGE1',
@@ -100,6 +143,19 @@ export const useMudClient = () => {
                     parser.reset();
                     decoderRef.current = new TextDecoder('utf-8');
                     ansiRef.current.reset();
+                    inventoryRevisionRef.current = -1;
+                    equipmentRevisionRef.current = -1;
+                    setVitals(null);
+                    setRoom(null);
+                    setInventory([]);
+                    setEquipment([]);
+                    setEquipmentSlotOrder([]);
+                } else if (state === 'closed') {
+                    setVitals(null);
+                    setRoom(null);
+                    setInventory([]);
+                    setEquipment([]);
+                    setEquipmentSlotOrder([]);
                 }
             },
             onData: (bytes) => parser.push(bytes),
@@ -125,11 +181,16 @@ export const useMudClient = () => {
             connectionRef.current = null;
             parserRef.current = null;
         };
-    }, [appendDebug, appendText, handleGMCP]);
+    }, [appendDebug, appendText, handleGMCP, requestGMCPState]);
 
     const connect = useCallback((url: string) => {
         setVitals(null);
         setRoom(null);
+        setInventory([]);
+        setEquipment([]);
+        setEquipmentSlotOrder([]);
+        inventoryRevisionRef.current = -1;
+        equipmentRevisionRef.current = -1;
         setServerSensitive(false);
         connectionRef.current?.connect(url, ['telnet']);
     }, []);
@@ -144,16 +205,28 @@ export const useMudClient = () => {
         connectionRef.current?.sendBytes(parser.encodeText(`${command}\n`));
     }, []);
 
+    const sendAction = useCallback((action: GMCPAction) => {
+        const command = action.command.trim();
+        if (!command || /[\r\n]/.test(command)) {
+            return;
+        }
+        sendCommand(command);
+    }, [sendCommand]);
+
     return {
         connectionState,
         connectionDetail,
         segments,
         vitals,
         room,
+        inventory,
+        equipment,
+        equipmentSlotOrder,
         serverSensitive,
         debugEntries,
         connect,
         disconnect,
         sendCommand,
+        sendAction,
     };
 };

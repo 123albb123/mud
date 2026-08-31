@@ -7,6 +7,12 @@ inherit F_CLEAN_UP;
 
 int do_get(object me, object ob, int raw);
 
+private void refresh_gmcp_items(object me)
+{
+    if (objectp(me) && function_exists("gmcp_item_command", me))
+        me->gmcp_item_command("get");
+}
+
 void create() { seteuid(getuid()); }
 
 int main(object me, string arg)
@@ -215,6 +221,7 @@ int do_get(object me, object obj, int raw)
             else
                 write(replace_string(msg, "$N", "你"));
         }
+        refresh_gmcp_items(me);
         return 1;
     }
     else

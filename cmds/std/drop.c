@@ -6,6 +6,12 @@ inherit F_CLEAN_UP;
 
 int do_drop(object me, object obj, int raw);
 
+private void refresh_gmcp_items(object me)
+{
+    if (objectp(me) && function_exists("gmcp_item_command", me))
+        me->gmcp_item_command("drop");
+}
+
 void create() { seteuid(getuid()); }
 
 int main(object me, string arg)
@@ -93,6 +99,7 @@ int do_drop(object me, object obj, int raw)
             area_move_side(obj, me);
         else
             obj->move(env);
+        refresh_gmcp_items(me);
         return 1;
     }
     if (obj->is_depot_ob())
@@ -156,6 +163,7 @@ int do_drop(object me, object obj, int raw)
         }
     }
 
+    refresh_gmcp_items(me);
     return 1;
 }
 

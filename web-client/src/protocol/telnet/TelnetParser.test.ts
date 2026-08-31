@@ -7,21 +7,26 @@ const createParser = () => {
     const text: Uint8Array[] = [];
     const gmcp: Uint8Array[] = [];
     const echo = vi.fn();
+    const gmcpEnabled = vi.fn();
     const parser = new TelnetParser({
         send: (bytes) => sent.push(bytes),
         onText: (bytes) => text.push(bytes),
         onGMCP: (bytes) => gmcp.push(bytes),
+        onGMCPEnabled: gmcpEnabled,
         onEcho: echo,
         terminalType: 'YH-TEST',
     });
-    return { parser, sent, text, gmcp, echo };
+    return { parser, sent, text, gmcp, echo, gmcpEnabled };
 };
 
 describe('TelnetParser', () => {
     it('answers server WILL GMCP with DO GMCP', () => {
-        const { parser, sent } = createParser();
+        const { parser, sent, gmcpEnabled } = createParser();
         parser.push(new Uint8Array([Telnet.IAC, Telnet.WILL, Telnet.GMCP]));
         expect([...sent[0]]).toEqual([Telnet.IAC, Telnet.DO, Telnet.GMCP]);
+        expect(gmcpEnabled).toHaveBeenCalledTimes(1);
+        parser.push(new Uint8Array([Telnet.IAC, Telnet.WILL, Telnet.GMCP]));
+        expect(gmcpEnabled).toHaveBeenCalledTimes(1);
     });
 
     it('keeps negotiation and subnegotiation state across frames', () => {

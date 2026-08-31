@@ -106,6 +106,9 @@ nomask int command_hook(string arg)
     PROFILE_D->make_profile();
 #endif
 
+    if (function_exists("gmcp_item_command", me))
+        me->gmcp_item_command(verb);
+
     return 1;
 }
 

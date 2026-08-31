@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CharacterPanel } from '../features/character/CharacterPanel';
+import { EquipmentPanel } from '../features/equipment/EquipmentPanel';
+import { InventoryPanel } from '../features/inventory/InventoryPanel';
 import { RoomPanel } from '../features/room/RoomPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
 import { Terminal } from '../features/terminal/Terminal';
@@ -17,6 +19,7 @@ export const App = () => {
     const client = useMudClient();
     const [url, setUrl] = useState(defaultMudUrl);
     const [showDebug, setShowDebug] = useState(false);
+    const [activePanel, setActivePanel] = useState<'inventory' | 'equipment' | null>(null);
     const autoConnectStarted = useRef(false);
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
@@ -72,8 +75,50 @@ export const App = () => {
                 <aside className="sidebar">
                     <CharacterPanel vitals={client.vitals} />
                     <RoomPanel room={client.room} disabled={!connected} onMove={client.sendCommand} />
+                    <div className="item-entrypoints" aria-label="角色物品">
+                        <button
+                            aria-pressed={activePanel === 'inventory'}
+                            className={activePanel === 'inventory' ? 'active' : ''}
+                            onClick={() => setActivePanel(activePanel === 'inventory' ? null : 'inventory')}
+                            type="button"
+                        >
+                            <span>行囊</span>
+                            <span>{client.inventory.length}</span>
+                        </button>
+                        <button
+                            aria-pressed={activePanel === 'equipment'}
+                            className={activePanel === 'equipment' ? 'active' : ''}
+                            onClick={() => setActivePanel(activePanel === 'equipment' ? null : 'equipment')}
+                            type="button"
+                        >
+                            <span>装备</span>
+                            <span>{client.equipment.length}</span>
+                        </button>
+                    </div>
                 </aside>
                 <Terminal segments={client.segments} />
+                {activePanel === 'inventory' && (
+                    <aside className="item-drawer" aria-label="行囊面板">
+                        <div className="drawer-heading">
+                            <strong>行囊</strong>
+                            <button onClick={() => setActivePanel(null)} type="button">关闭</button>
+                        </div>
+                        <InventoryPanel items={client.inventory} onAction={client.sendAction} />
+                    </aside>
+                )}
+                {activePanel === 'equipment' && (
+                    <aside className="item-drawer" aria-label="装备面板">
+                        <div className="drawer-heading">
+                            <strong>装备</strong>
+                            <button onClick={() => setActivePanel(null)} type="button">关闭</button>
+                        </div>
+                        <EquipmentPanel
+                            onAction={client.sendAction}
+                            slotOrder={client.equipmentSlotOrder}
+                            slots={client.equipment}
+                        />
+                    </aside>
+                )}
                 {showDebug && (
                     <aside className="debug-panel" aria-label="Protocol Debug">
                         <div className="debug-heading">

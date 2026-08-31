@@ -6,6 +6,7 @@ export interface TelnetParserOptions {
     send: (bytes: Uint8Array) => void;
     onText: (bytes: Uint8Array) => void;
     onGMCP: (bytes: Uint8Array) => void;
+    onGMCPEnabled?: () => void;
     onEcho: (serverEcho: boolean) => void;
     onDebug?: (message: string) => void;
     terminalType?: string;
@@ -138,7 +139,7 @@ export class TelnetParser {
                 option === Telnet.SUPPRESS_GO_AHEAD) {
                 this.sendNegotiation(Telnet.DO, option);
                 if (option === Telnet.GMCP) {
-                    this.gmcpEnabled = true;
+                    this.enableGMCP();
                 } else if (option === Telnet.ECHO) {
                     this.options.onEcho(true);
                 }
@@ -166,7 +167,7 @@ export class TelnetParser {
                 this.sendNegotiation(Telnet.WILL, option);
                 this.sendWindowSize();
             } else if (option === Telnet.GMCP) {
-                this.gmcpEnabled = true;
+                this.enableGMCP();
                 this.sendNegotiation(Telnet.WILL, option);
             } else {
                 this.sendNegotiation(Telnet.WONT, option);
@@ -191,6 +192,14 @@ export class TelnetParser {
             response.set(terminal, 1);
             this.sendSubnegotiation(Telnet.TERMINAL_TYPE, response);
         }
+    }
+
+    private enableGMCP(): void {
+        if (this.gmcpEnabled) {
+            return;
+        }
+        this.gmcpEnabled = true;
+        this.options.onGMCPEnabled?.();
     }
 
     private sendNegotiation(command: number, option: number): void {
