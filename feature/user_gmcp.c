@@ -1,6 +1,33 @@
 #define GMCP_LOG 50
 
 nosave string *gmcp_log = ({});
+private nosave mapping gmcp_room_ids = ([]);
+private nosave string gmcp_room_session;
+private nosave int gmcp_room_sequence;
+
+private string query_gmcp_room_id(object room)
+{
+    string key;
+
+    if (!objectp(room))
+        return "";
+
+    if (!mapp(gmcp_room_ids))
+        gmcp_room_ids = ([]);
+    if (!stringp(gmcp_room_session))
+        gmcp_room_session = sprintf("%08x", random(0x7fffffff));
+
+    key = file_name(room);
+    if (!stringp(gmcp_room_ids[key]))
+    {
+        gmcp_room_sequence++;
+        gmcp_room_ids[key] = sprintf("r-%s-%04d",
+                                     gmcp_room_session,
+                                     gmcp_room_sequence);
+    }
+
+    return gmcp_room_ids[key];
+}
 
 // msp_oob("!!SOUND(10001.wav L=1 V=100 U=https://mud.ren/storage/wav/)");
 void msp_oob(string req)
@@ -105,11 +132,20 @@ void gmcp(string req)
     else if (req == "Room.Info.Get")
     {
         object ob = environment(this_object());
-        mapping room_info = ([
-            "name" : remove_ansi(ob->query("short") || ob->query("name") || ""),
-            "exits": keys(ob->query("exits") || ([])),
-            "area" : ob->query("outdoors") || explode(base_name(ob), "/")[1],
-            "hash" : hash("md5", base_name(ob))
+        string room_id;
+        mapping room_info;
+
+        if (!objectp(ob))
+            return;
+
+        room_id = query_gmcp_room_id(ob);
+        room_info = ([
+            "name"    : remove_ansi(ob->query("short") || ob->query("name") || ""),
+            "exits"   : keys(ob->query("exits") || ([])),
+            "area"    : ob->query("outdoors") || explode(base_name(ob), "/")[1],
+            "room_id" : room_id,
+            // 兼容已经读取 hash 字段的客户端；值不再依赖 crypto efun。
+            "hash"    : room_id,
         ]);
         sendGMCP(room_info, "Room", "Info");
         // 音效示例
