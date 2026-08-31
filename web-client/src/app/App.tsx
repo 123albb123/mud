@@ -103,7 +103,7 @@ export const App = () => {
                             <strong>行囊</strong>
                             <button onClick={() => setActivePanel(null)} type="button">关闭</button>
                         </div>
-                        <InventoryPanel items={client.inventory} onAction={client.sendAction} />
+                        <InventoryPanel items={client.inventory} onAction={client.sendItemAction} />
                     </aside>
                 )}
                 {activePanel === 'equipment' && (
@@ -113,7 +113,7 @@ export const App = () => {
                             <button onClick={() => setActivePanel(null)} type="button">关闭</button>
                         </div>
                         <EquipmentPanel
-                            onAction={client.sendAction}
+                            onAction={client.sendItemAction}
                             slotOrder={client.equipmentSlotOrder}
                             slots={client.equipment}
                         />

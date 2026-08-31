@@ -3,7 +3,7 @@ import type { GMCPAction, InventoryItem } from '../../protocol/gmcp/gmcp';
 
 interface InventoryPanelProps {
     items: InventoryItem[];
-    onAction: (action: GMCPAction) => void;
+    onAction: (itemId: string, action: string) => void;
 }
 
 const categoryLabels: Record<string, string> = {
@@ -33,7 +33,7 @@ const actionLabels: Record<string, string> = {
     drop: '丢弃',
 };
 
-const actionLabel = (action: GMCPAction): string => actionLabels[action.id] || action.id;
+const actionLabel = (action: GMCPAction): string => action.label || actionLabels[action.id] || action.id;
 
 export const InventoryPanel = ({ items, onAction }: InventoryPanelProps) => {
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -86,7 +86,11 @@ export const InventoryPanel = ({ items, onAction }: InventoryPanelProps) => {
                     <p>{selectedItem.name}</p>
                     <div>
                         {selectedItem.actions.map((action) => (
-                            <button key={`${action.id}:${action.command}`} onClick={() => onAction(action)} type="button">
+                            <button
+                                key={`${selectedItem.item_id}:${action.id}`}
+                                onClick={() => onAction(selectedItem.item_id, action.id)}
+                                type="button"
+                            >
                                 {actionLabel(action)}
                             </button>
                         ))}

@@ -26,7 +26,7 @@ export interface RoomInfo {
 
 export interface GMCPAction {
     id: string;
-    command: string;
+    label?: string;
 }
 
 export interface InventoryItem {
@@ -68,6 +68,45 @@ export interface EquipmentSnapshot {
 }
 
 const decoder = new TextDecoder('utf-8');
+
+export const GMCP_CLIENT_HELLO = {
+    client: 'Yanhuang Web',
+    version: '0.2.1',
+};
+
+export const GMCP_SUPPORTS = [
+    'Char.Vitals 1',
+    'Room.Info 1',
+    'Char.Inventory 1',
+    'Char.Equipment 1',
+];
+
+export const GMCP_INITIAL_GETS = [
+    'Char.Vitals.Get',
+    'Room.Info.Get',
+    'Char.Inventory.Get',
+    'Char.Equipment.Get',
+];
+
+const itemActions = new Set([
+    'look', 'drop', 'eat', 'drink', 'wield', 'unwield', 'wear', 'remove',
+]);
+const itemIdPattern = /^i-[A-Za-z0-9]+-[0-9]+$/;
+
+export interface WebItemActionRequest {
+    item_id: string;
+    action: string;
+}
+
+export const toWebItemActionRequest = (
+    itemId: string,
+    action: string,
+): WebItemActionRequest | null => {
+    if (!itemIdPattern.test(itemId) || !itemActions.has(action)) {
+        return null;
+    }
+    return { item_id: itemId, action };
+};
 
 export const parseGMCP = (bytes: Uint8Array): GMCPMessage => {
     const message = decoder.decode(bytes);
@@ -161,10 +200,13 @@ const parseAction = (value: unknown): GMCPAction | null => {
         return null;
     }
     const data = value as Record<string, unknown>;
-    if (typeof data.id !== 'string' || typeof data.command !== 'string' || /[\r\n]/.test(data.command)) {
+    if (typeof data.id !== 'string' || !itemActions.has(data.id)) {
         return null;
     }
-    return { id: data.id, command: data.command };
+    if (typeof data.label === 'string' && !/[\r\n]/.test(data.label)) {
+        return { id: data.id, label: data.label };
+    }
+    return { id: data.id };
 };
 
 const parseActions = (value: unknown): GMCPAction[] => {

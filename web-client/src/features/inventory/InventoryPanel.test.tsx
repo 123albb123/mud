@@ -12,7 +12,7 @@ const items = [
         weight: 1,
         category: 'food',
         equipped: false,
-        actions: [{ id: 'eat', command: 'eat jinchuang' }, { id: 'drop', command: 'drop jinchuang' }],
+        actions: [{ id: 'eat' }, { id: 'drop' }],
     },
     {
         item_id: 'i-test-2',
@@ -23,19 +23,19 @@ const items = [
         weight: 1,
         category: 'food',
         equipped: false,
-        actions: [{ id: 'look', command: 'look jinchuang' }],
+        actions: [{ id: 'look' }],
     },
 ];
 
 describe('InventoryPanel', () => {
-    it('renders quantities and only sends the selected server action', () => {
+    it('renders quantities and sends the selected opaque item ID with action ID', () => {
         const onAction = vi.fn();
         render(<InventoryPanel items={items} onAction={onAction} />);
         expect(screen.getAllByText('金创药')).toHaveLength(2);
         expect(screen.getByText('5粒')).toBeInTheDocument();
         fireEvent.click(screen.getAllByRole('button', { name: /金创药/ })[0]);
         fireEvent.click(screen.getByRole('button', { name: '吃' }));
-        expect(onAction).toHaveBeenCalledWith(items[0].actions[0]);
+        expect(onAction).toHaveBeenCalledWith('i-test-1', 'eat');
     });
 
     it('renders an empty snapshot without inventing an item', () => {

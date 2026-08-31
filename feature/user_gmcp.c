@@ -13,6 +13,9 @@ private nosave int gmcp_equipment_revision;
 private nosave string gmcp_inventory_fingerprint;
 private nosave string gmcp_equipment_fingerprint;
 private nosave mapping gmcp_support_versions = ([]);
+private nosave mapping gmcp_client_info = ([]);
+private nosave int gmcp_inventory_refresh_pending;
+private nosave int gmcp_equipment_refresh_pending;
 
 varargs void sendGMCP(mapping data, mixed *modules...);
 
@@ -62,6 +65,43 @@ private string query_gmcp_item_id(object item)
     }
 
     return gmcp_item_ids[key];
+}
+
+private void gmcp_cleanup_item_ids(object *items)
+{
+    mapping active_items;
+    string *keys_to_check;
+    string key;
+    int i;
+
+    if (!mapp(gmcp_item_ids))
+        return;
+
+    active_items = ([]);
+    for (i = 0; i < sizeof(items); i++)
+    {
+        if (objectp(items[i]) && environment(items[i]) == this_object())
+            active_items[file_name(items[i])] = 1;
+    }
+
+    keys_to_check = keys(gmcp_item_ids);
+    for (i = 0; i < sizeof(keys_to_check); i++)
+    {
+        key = keys_to_check[i];
+        if (!active_items[key])
+            map_delete(gmcp_item_ids, key);
+    }
+}
+
+private mixed gmcp_item_query(object item, string key)
+{
+    mixed value;
+
+    if (!objectp(item) || !stringp(key))
+        return 0;
+    if (catch(value = item->query(key)))
+        return 0;
+    return value;
 }
 
 private int gmcp_item_is(object item, string method)
@@ -160,47 +200,45 @@ private string gmcp_item_equipped(object item)
 {
     mixed value;
 
-    if (catch(value = item->query("equipped")) || !stringp(value))
+    value = gmcp_item_query(item, "equipped");
+    if (!stringp(value))
         return "";
     return value;
 }
 
-private mixed *gmcp_item_actions(object item, string command_id, string equipped)
+private mixed *gmcp_item_actions(object item, string equipped)
 {
     mixed *actions;
     mixed no_drop;
     mixed no_wield;
 
     actions = ({});
-    if (!stringp(command_id) || command_id == "")
-        return actions;
-
-    actions += ({(["id": "look", "command": "look " + command_id])});
+    actions += ({(["id": "look"])});
     if (equipped == "wielded")
     {
-        actions += ({(["id": "unwield", "command": "unwield " + command_id])});
+        actions += ({(["id": "unwield"])});
         return actions;
     }
     if (equipped == "worn")
     {
-        actions += ({(["id": "remove", "command": "remove " + command_id])});
+        actions += ({(["id": "remove"])});
         return actions;
     }
 
-    no_drop = item->query("no_drop");
+    no_drop = gmcp_item_query(item, "no_drop");
     if (!no_drop)
-        actions += ({(["id": "drop", "command": "drop " + command_id])});
+        actions += ({(["id": "drop"])});
 
-    if (gmcp_item_is(item, "is_food") || item->query("only_do_effect"))
-        actions += ({(["id": "eat", "command": "eat " + command_id])});
-    if (gmcp_item_is(item, "is_liquid") || mapp(item->query("liquid")))
-        actions += ({(["id": "drink", "command": "drink " + command_id])});
+    if (gmcp_item_is(item, "is_food") || gmcp_item_query(item, "only_do_effect"))
+        actions += ({(["id": "eat"])});
+    if (gmcp_item_is(item, "is_liquid") || mapp(gmcp_item_query(item, "liquid")))
+        actions += ({(["id": "drink"])});
 
-    no_wield = item->query("no_wield");
+    no_wield = gmcp_item_query(item, "no_wield");
     if (gmcp_item_is(item, "is_weapon") && !no_wield)
-        actions += ({(["id": "wield", "command": "wield " + command_id])});
+        actions += ({(["id": "wield"])});
     if (gmcp_item_is(item, "is_armor"))
-        actions += ({(["id": "wear", "command": "wear " + command_id])});
+        actions += ({(["id": "wear"])});
 
     return actions;
 }
@@ -222,7 +260,7 @@ private mapping gmcp_inventory_item(object item)
         name = gmcp_item_text(item->short());
     command_id = gmcp_item_command_id(item);
     equipped = gmcp_item_equipped(item);
-    value = item->query("unit");
+    value = gmcp_item_query(item, "unit");
     unit = stringp(value) ? gmcp_item_text(value) : "";
     record = ([
         "item_id"   : query_gmcp_item_id(item),
@@ -233,7 +271,7 @@ private mapping gmcp_inventory_item(object item)
         "weight"    : gmcp_item_weight(item),
         "category"  : gmcp_item_category(item),
         "equipped"  : equipped != "",
-        "actions"   : gmcp_item_actions(item, command_id, equipped),
+        "actions"   : gmcp_item_actions(item, equipped),
     ]);
     return record;
 }
@@ -246,6 +284,7 @@ private mapping gmcp_inventory_snapshot()
     int i;
 
     items = all_inventory(this_object());
+    gmcp_cleanup_item_ids(items);
     records = ({});
     for (i = 0; i < sizeof(items); i++)
     {
@@ -253,6 +292,7 @@ private mapping gmcp_inventory_snapshot()
         if (mapp(record))
             records += ({record});
     }
+    records = sort_array(records, (: strcmp($1["item_id"], $2["item_id"]) :));
 
     return ([
         "version" : GMCP_ITEMS_VERSION,
@@ -287,6 +327,7 @@ private mapping gmcp_equipment_snapshot()
 
     secondary_weapon = this_object()->query_temp("secondary_weapon");
     items = all_inventory(this_object());
+    gmcp_cleanup_item_ids(items);
     records = ({});
 
     for (i = 0; i < sizeof(items); i++)
@@ -324,6 +365,8 @@ private mapping gmcp_equipment_snapshot()
         ]);
         records += ({record});
     }
+    records = sort_array(records, (: strcmp($1["slot"] + $1["item_id"],
+                                           $2["slot"] + $2["item_id"]) :));
 
     return ([
         "version"   : GMCP_ITEMS_VERSION,
@@ -344,36 +387,57 @@ private string gmcp_snapshot_fingerprint(mixed value)
     return result;
 }
 
-varargs void gmcp_refresh_items(int force)
+private int gmcp_supports(string package)
+{
+    mixed version;
+
+    if (!mapp(gmcp_support_versions) || !stringp(package))
+        return 0;
+    version = gmcp_support_versions[package];
+    return intp(version) && version > 0;
+}
+
+varargs void gmcp_refresh_inventory(int force)
 {
     mapping inventory;
-    mapping equipment;
     string inventory_fingerprint;
-    string equipment_fingerprint;
     int send_inventory;
-    int send_equipment;
 
-    if (!has_gmcp())
+    if (!has_gmcp() || (!force && !gmcp_supports("Char.Inventory")))
         return;
 
     inventory = gmcp_inventory_snapshot();
-    equipment = gmcp_equipment_snapshot();
     inventory_fingerprint = gmcp_snapshot_fingerprint(inventory["items"]);
-    equipment_fingerprint = gmcp_snapshot_fingerprint(equipment["slots"]);
     send_inventory = force || inventory_fingerprint != gmcp_inventory_fingerprint;
-    send_equipment = force || equipment_fingerprint != gmcp_equipment_fingerprint;
 
     if (send_inventory)
     {
-        gmcp_inventory_revision++;
+        if (inventory_fingerprint != gmcp_inventory_fingerprint)
+            gmcp_inventory_revision++;
         inventory["revision"] = gmcp_inventory_revision;
         inventory["sequence"] = gmcp_inventory_revision;
         sendGMCP(inventory, "Char", "Inventory");
         gmcp_inventory_fingerprint = inventory_fingerprint;
     }
+}
+
+varargs void gmcp_refresh_equipment(int force)
+{
+    mapping equipment;
+    string equipment_fingerprint;
+    int send_equipment;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Char.Equipment")))
+        return;
+
+    equipment = gmcp_equipment_snapshot();
+    equipment_fingerprint = gmcp_snapshot_fingerprint(equipment["slots"]);
+    send_equipment = force || equipment_fingerprint != gmcp_equipment_fingerprint;
+
     if (send_equipment)
     {
-        gmcp_equipment_revision++;
+        if (equipment_fingerprint != gmcp_equipment_fingerprint)
+            gmcp_equipment_revision++;
         equipment["revision"] = gmcp_equipment_revision;
         equipment["sequence"] = gmcp_equipment_revision;
         sendGMCP(equipment, "Char", "Equipment");
@@ -381,14 +445,57 @@ varargs void gmcp_refresh_items(int force)
     }
 }
 
+varargs void gmcp_refresh_items(int force)
+{
+    gmcp_refresh_inventory(force);
+    gmcp_refresh_equipment(force);
+}
+
+private void gmcp_flush_item_refresh()
+{
+    int refresh_inventory;
+    int refresh_equipment;
+
+    refresh_inventory = gmcp_inventory_refresh_pending;
+    refresh_equipment = gmcp_equipment_refresh_pending;
+    gmcp_inventory_refresh_pending = 0;
+    gmcp_equipment_refresh_pending = 0;
+
+    if (refresh_inventory)
+        gmcp_refresh_inventory();
+    if (refresh_equipment)
+        gmcp_refresh_equipment();
+}
+
+void gmcp_inventory_changed()
+{
+    if (!has_gmcp() || gmcp_inventory_refresh_pending)
+        return;
+
+    gmcp_inventory_refresh_pending = 1;
+    call_out("gmcp_flush_item_refresh", 0);
+}
+
+void gmcp_equipment_changed()
+{
+    if (!has_gmcp() || gmcp_equipment_refresh_pending)
+        return;
+
+    gmcp_equipment_refresh_pending = 1;
+    call_out("gmcp_flush_item_refresh", 0);
+}
+
+void gmcp_items_changed()
+{
+    gmcp_inventory_changed();
+    gmcp_equipment_changed();
+}
+
 int gmcp_item_command(string verb)
 {
     if (!stringp(verb))
         return 0;
 
-    // The command implementation remains authoritative. Defer the re-read
-    // until the next driver tick so a destructed or split item is no longer
-    // present in the current command's inventory view.
     switch (verb)
     {
     case "get":
@@ -397,13 +504,15 @@ int gmcp_item_command(string verb)
     case "put":
     case "eat":
     case "drink":
+    case "buy":
+    case "sell":
+        gmcp_inventory_changed();
+        return 1;
     case "wield":
     case "unwield":
     case "wear":
     case "remove":
-    case "buy":
-    case "sell":
-        call_out("gmcp_refresh_items", 0);
+        gmcp_items_changed();
         return 1;
     }
     return 0;
@@ -466,7 +575,7 @@ private void gmcp_enable()
             "Char.Inventory" : GMCP_ITEMS_VERSION,
             "Char.Equipment": GMCP_ITEMS_VERSION,
         ]),
-    ]), "Core", "Hello");
+    ]), "Server", "Hello");
 }
 
 protected void init_gmcp()
@@ -497,7 +606,220 @@ void gmcp_reconnect()
         return;
 
     gmcp_enable();
+}
+
+private mapping gmcp_parse_supports(mixed decoded)
+{
+    mapping result;
+    mapping legacy_packages;
+    string *parts;
+    string package;
+    mixed version;
+    int i;
+
+    result = ([]);
+    if (pointerp(decoded))
+    {
+        for (i = 0; i < sizeof(decoded); i++)
+        {
+            if (!stringp(decoded[i]))
+                continue;
+            parts = explode(decoded[i], " ") - ({""});
+            if (sizeof(parts) != 2)
+                continue;
+            package = parts[0];
+            version = to_int(parts[1]);
+            if (package != "" && intp(version) && version > 0)
+                result[package] = version;
+        }
+        return result;
+    }
+
+    if (!mapp(decoded))
+        return result;
+
+    legacy_packages = mapp(decoded["packages"])
+        ? decoded["packages"] : decoded;
+    foreach (package, version in legacy_packages)
+    {
+        if (stringp(package) && intp(version) && version > 0)
+            result[package] = version;
+    }
+    return result;
+}
+
+private int gmcp_item_action_is_allowed(string action)
+{
+    return member_array(action, ({
+        "look", "drop", "eat", "drink", "wield", "unwield", "wear", "remove",
+    })) != -1;
+}
+
+private object gmcp_find_item(string item_id)
+{
+    object *items;
+    string key;
+    int i;
+
+    if (!stringp(item_id) || !mapp(gmcp_item_ids))
+        return 0;
+
+    items = all_inventory(this_object());
+    gmcp_cleanup_item_ids(items);
+    for (i = 0; i < sizeof(items); i++)
+    {
+        if (!objectp(items[i]) || environment(items[i]) != this_object())
+            continue;
+        key = file_name(items[i]);
+        if (gmcp_item_ids[key] == item_id)
+            return items[i];
+    }
+    return 0;
+}
+
+private int gmcp_item_action_available(object item, string action)
+{
+    mixed *actions;
+    string equipped;
+    mapping item_action;
+    int i;
+
+    if (!objectp(item) || environment(item) != this_object() ||
+        !gmcp_item_action_is_allowed(action))
+        return 0;
+
+    equipped = gmcp_item_equipped(item);
+    actions = gmcp_item_actions(item, equipped);
+    for (i = 0; i < sizeof(actions); i++)
+    {
+        item_action = actions[i];
+        if (mapp(item_action) && item_action["id"] == action)
+            return 1;
+    }
+    return 0;
+}
+
+private int gmcp_run_item_action(object item, string action)
+{
+    mixed result;
+
+    if (!objectp(item) || environment(item) != this_object())
+        return 0;
+
+    switch (action)
+    {
+    case "look":
+        if (catch(result = call_other("/cmds/std/look", "look_item", this_object(), item)))
+            return -1;
+        break;
+    case "drop":
+        if (catch(result = call_other("/cmds/std/drop", "do_drop", this_object(), item, 0)))
+            return -1;
+        break;
+    case "eat":
+        if (catch(result = call_other("/cmds/std/eat", "do_eat", this_object(), item, "", 0)))
+            return -1;
+        break;
+    case "drink":
+        if (catch(result = call_other("/cmds/std/drink", "do_drink", this_object(), item, 0)))
+            return -1;
+        break;
+    case "wield":
+        if (catch(result = call_other("/cmds/std/wield", "do_wield", this_object(), item)))
+            return -1;
+        break;
+    case "unwield":
+        if (catch(result = call_other("/cmds/std/unwield", "do_unwield", this_object(), item)))
+            return -1;
+        break;
+    case "wear":
+        if (catch(result = call_other("/cmds/std/wear", "do_wear", this_object(), item)))
+            return -1;
+        break;
+    case "remove":
+        if (catch(result = call_other("/cmds/std/remove", "do_remove", this_object(), item)))
+            return -1;
+        break;
+    default:
+        return 0;
+    }
+    return result ? 1 : 0;
+}
+
+private void gmcp_item_action_failed(string message)
+{
+    write(message + "\n");
+    // This is an explicit action response. It may resend the current snapshot,
+    // but refresh functions keep the revision unchanged when data is unchanged.
     gmcp_refresh_items(1);
+}
+
+private void gmcp_item_action_succeeded(string action)
+{
+    switch (action)
+    {
+    case "eat":
+    case "drink":
+        gmcp_inventory_changed();
+        break;
+    case "wield":
+    case "unwield":
+    case "wear":
+    case "remove":
+        gmcp_items_changed();
+        break;
+    }
+}
+
+private void gmcp_handle_web_item_action(string payload)
+{
+    mixed decoded;
+    mapping data;
+    object item;
+    string item_id;
+    string action;
+    int result;
+
+    if (catch(decoded = json_decode(payload)) || !mapp(decoded))
+    {
+        gmcp_item_action_failed("物品操作请求无效。");
+        return;
+    }
+
+    data = decoded;
+    item_id = data["item_id"];
+    action = data["action"];
+    if (!stringp(item_id) || !stringp(action) || !gmcp_item_action_is_allowed(action))
+    {
+        gmcp_item_action_failed("物品操作不被允许。");
+        return;
+    }
+
+    item = gmcp_find_item(item_id);
+    if (!objectp(item))
+    {
+        gmcp_item_action_failed("该物品已经不在你的行囊中。");
+        return;
+    }
+    if (!gmcp_item_action_available(item, action))
+    {
+        gmcp_item_action_failed("该物品当前不能执行这个操作。");
+        return;
+    }
+
+    result = gmcp_run_item_action(item, action);
+    if (result < 0)
+    {
+        gmcp_item_action_failed("物品操作失败，请查看当前状态。");
+        return;
+    }
+    if (!result)
+    {
+        gmcp_item_action_failed("物品操作未能完成，请查看当前状态。");
+        return;
+    }
+
+    gmcp_item_action_succeeded(action);
 }
 
 // gmcp - provides an interface to GMCP data received from the client
@@ -506,7 +828,7 @@ void gmcp(string req)
     int split;
     string package;
     string payload;
-    mapping support_data;
+    mixed decoded;
 
     log_gmcp("Received: " + req);
     split = strsrch(req, " ");
@@ -521,19 +843,21 @@ void gmcp(string req)
         payload = req[split + 1..];
     }
 
-    if (package == "Core.Supports.Set")
+    if (package == "Core.Hello")
     {
-        mixed decoded;
-
         if (!catch(decoded = json_decode(payload)) && mapp(decoded))
         {
-            support_data = decoded;
-            if (mapp(support_data["packages"]))
-                gmcp_support_versions = support_data["packages"];
-            else
-                gmcp_support_versions = support_data;
+            gmcp_client_info = ([]);
+            if (stringp(decoded["client"]))
+                gmcp_client_info["client"] = decoded["client"];
+            if (stringp(decoded["version"]))
+                gmcp_client_info["version"] = decoded["version"];
         }
-        gmcp_refresh_items(1);
+    }
+    else if (package == "Core.Supports.Set")
+    {
+        if (!catch(decoded = json_decode(payload)))
+            gmcp_support_versions = gmcp_parse_supports(decoded);
     }
     else if (package == "Char.Vitals.Get")
     {
@@ -589,10 +913,14 @@ void gmcp(string req)
     }
     else if (package == "Char.Inventory.Get")
     {
-        gmcp_refresh_items(1);
+        gmcp_refresh_inventory(1);
     }
     else if (package == "Char.Equipment.Get")
     {
-        gmcp_refresh_items(1);
+        gmcp_refresh_equipment(1);
+    }
+    else if (package == "Web.Item.Action")
+    {
+        gmcp_handle_web_item_action(payload);
     }
 }

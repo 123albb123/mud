@@ -4,7 +4,7 @@ import type { EquipmentSlot, GMCPAction } from '../../protocol/gmcp/gmcp';
 interface EquipmentPanelProps {
     slots: EquipmentSlot[];
     slotOrder: string[];
-    onAction: (action: GMCPAction) => void;
+    onAction: (itemId: string, action: string) => void;
 }
 
 const slotLabels: Record<string, string> = {
@@ -32,7 +32,7 @@ const actionLabels: Record<string, string> = {
     remove: '脱下',
 };
 
-const actionLabel = (action: GMCPAction): string => actionLabels[action.id] || action.id;
+const actionLabel = (action: GMCPAction): string => action.label || actionLabels[action.id] || action.id;
 
 export const EquipmentPanel = ({ slots, slotOrder, onAction }: EquipmentPanelProps) => {
     const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -80,7 +80,11 @@ export const EquipmentPanel = ({ slots, slotOrder, onAction }: EquipmentPanelPro
                     <p>{selectedItem.name}</p>
                     <div>
                         {selectedItem.actions.map((action) => (
-                            <button key={`${action.id}:${action.command}`} onClick={() => onAction(action)} type="button">
+                            <button
+                                key={`${selectedItem.item_id}:${action.id}`}
+                                onClick={() => onAction(selectedItem.item_id, action.id)}
+                                type="button"
+                            >
                                 {actionLabel(action)}
                             </button>
                         ))}

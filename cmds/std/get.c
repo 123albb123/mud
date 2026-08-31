@@ -9,8 +9,8 @@ int do_get(object me, object ob, int raw);
 
 private void refresh_gmcp_items(object me)
 {
-    if (objectp(me) && function_exists("gmcp_item_command", me))
-        me->gmcp_item_command("get");
+    if (objectp(me) && function_exists("gmcp_inventory_changed", me))
+        me->gmcp_inventory_changed();
 }
 
 void create() { seteuid(getuid()); }

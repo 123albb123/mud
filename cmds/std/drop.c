@@ -8,8 +8,8 @@ int do_drop(object me, object obj, int raw);
 
 private void refresh_gmcp_items(object me)
 {
-    if (objectp(me) && function_exists("gmcp_item_command", me))
-        me->gmcp_item_command("drop");
+    if (objectp(me) && function_exists("gmcp_inventory_changed", me))
+        me->gmcp_inventory_changed();
 }
 
 void create() { seteuid(getuid()); }

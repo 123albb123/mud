@@ -15,7 +15,7 @@ describe('EquipmentPanel', () => {
                     name: '长剑',
                     command_id: 'sword',
                     type: 'weapon',
-                    actions: [{ id: 'unwield', command: 'unwield sword' }],
+                    actions: [{ id: 'unwield' }],
                 }]}
             />,
         );
@@ -23,6 +23,6 @@ describe('EquipmentPanel', () => {
         expect(screen.getByText('未装备')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /主手武器/ }));
         fireEvent.click(screen.getByRole('button', { name: '卸下' }));
-        expect(onAction).toHaveBeenCalledWith({ id: 'unwield', command: 'unwield sword' });
+        expect(onAction).toHaveBeenCalledWith('i-sword', 'unwield');
     });
 });

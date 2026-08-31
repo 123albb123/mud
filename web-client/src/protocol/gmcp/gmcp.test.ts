@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+    GMCP_CLIENT_HELLO,
+    GMCP_INITIAL_GETS,
+    GMCP_SUPPORTS,
     parseGMCP,
     toCharacterVitals,
     toEquipmentSnapshot,
     toInventorySnapshot,
     toRoomInfo,
+    toWebItemActionRequest,
 } from './gmcp';
 
 const encode = (value: string) => new TextEncoder().encode(value);
@@ -48,6 +52,36 @@ describe('GMCP codec', () => {
         });
     });
 
+    it('uses client-directed Core.Hello and standard Core.Supports.Set strings', () => {
+        expect(GMCP_CLIENT_HELLO).toEqual({
+            client: 'Yanhuang Web',
+            version: '0.2.1',
+        });
+        expect(GMCP_SUPPORTS).toEqual([
+            'Char.Vitals 1',
+            'Room.Info 1',
+            'Char.Inventory 1',
+            'Char.Equipment 1',
+        ]);
+        expect(GMCP_INITIAL_GETS).toEqual([
+            'Char.Vitals.Get',
+            'Room.Info.Get',
+            'Char.Inventory.Get',
+            'Char.Equipment.Get',
+        ]);
+    });
+
+    it('builds Web.Item.Action from only an opaque item ID and allowlisted action', () => {
+        expect(toWebItemActionRequest('i-session-0002', 'wield')).toEqual({
+            item_id: 'i-session-0002',
+            action: 'wield',
+        });
+        expect(toWebItemActionRequest('/clone/weapon/sword', 'wield')).toBeNull();
+        expect(toWebItemActionRequest('i-session-0002\nlook room', 'wield')).toBeNull();
+        expect(toWebItemActionRequest('i-session-0002', 'wield\nlook room')).toBeNull();
+        expect(toWebItemActionRequest('i-session-0002', 'anything')).toBeNull();
+    });
+
     it('normalizes real LPC inventory snapshots, including same-name item IDs', () => {
         const snapshot = toInventorySnapshot({
             version: 1,
@@ -65,7 +99,7 @@ describe('GMCP codec', () => {
                     weight: 1200,
                     category: 'weapon',
                     equipped: 1,
-                    actions: [{ id: 'unwield', command: 'unwield long sword' }],
+                    actions: [{ id: 'unwield' }],
                     future_field: true,
                 },
                 {
@@ -77,7 +111,7 @@ describe('GMCP codec', () => {
                     weight: 1200,
                     category: 'weapon',
                     equipped: 0,
-                    actions: [{ id: 'wield', command: 'wield long sword' }],
+                    actions: [{ id: 'wield' }],
                 },
             ],
         });

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnsiParser, type AnsiSegment } from '../protocol/ansi/AnsiParser';
 import {
+    GMCP_CLIENT_HELLO,
+    GMCP_INITIAL_GETS,
+    GMCP_SUPPORTS,
     parseGMCP,
+    toWebItemActionRequest,
     toCharacterVitals,
     toEquipmentSnapshot,
     toInventorySnapshot,
     toRoomInfo,
     type CharacterVitals,
     type EquipmentSlot,
-    type GMCPAction,
     type InventoryItem,
     type RoomInfo,
 } from '../protocol/gmcp/gmcp';
@@ -53,19 +56,9 @@ export const useMudClient = () => {
         if (!parser) {
             return;
         }
-        parser.sendGMCP('Core.Supports.Set', {
-            version: 1,
-            packages: {
-                'Char.Vitals': 1,
-                'Room.Info': 1,
-                'Char.Inventory': 1,
-                'Char.Equipment': 1,
-            },
-        });
-        parser.sendGMCP('Char.Vitals.Get');
-        parser.sendGMCP('Room.Info.Get');
-        parser.sendGMCP('Char.Inventory.Get');
-        parser.sendGMCP('Char.Equipment.Get');
+        parser.sendGMCP('Core.Hello', GMCP_CLIENT_HELLO);
+        parser.sendGMCP('Core.Supports.Set', GMCP_SUPPORTS);
+        GMCP_INITIAL_GETS.forEach((packageName) => parser.sendGMCP(packageName));
     }, []);
 
     const appendDebug = useCallback((message: string) => {
@@ -205,13 +198,14 @@ export const useMudClient = () => {
         connectionRef.current?.sendBytes(parser.encodeText(`${command}\n`));
     }, []);
 
-    const sendAction = useCallback((action: GMCPAction) => {
-        const command = action.command.trim();
-        if (!command || /[\r\n]/.test(command)) {
+    const sendItemAction = useCallback((itemId: string, action: string) => {
+        const parser = parserRef.current;
+        const request = toWebItemActionRequest(itemId, action);
+        if (!parser || !request) {
             return;
         }
-        sendCommand(command);
-    }, [sendCommand]);
+        parser.sendGMCP('Web.Item.Action', request);
+    }, []);
 
     return {
         connectionState,
@@ -227,6 +221,6 @@ export const useMudClient = () => {
         connect,
         disconnect,
         sendCommand,
-        sendAction,
+        sendItemAction,
     };
 };

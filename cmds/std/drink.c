@@ -4,12 +4,102 @@ inherit F_CLEAN_UP;
 
 void create() { seteuid(getuid()); }
 
+int do_drink(object me, object ob, int need_busy)
+{
+    object *guard;
+
+    if (!objectp(ob))
+        return 0;
+    if (me->is_busy())
+    {
+        write("你上一个动作还没有完成。\n");
+        return 1;
+    }
+
+    if (guard = ob->query_temp("guarded"))
+    {
+        guard = filter_array(guard, (: objectp($1) && present($1, environment($(me))) &&
+                                       living($1) && ($1 != $(me)) :));
+        if (sizeof(guard))
+            return notify_fail(guard[0]->name() + "正守在" + ob->name() + "一旁，防止任何人拿走。\n");
+    }
+
+    if (ob->query("only_do_effect"))
+    {
+        if (!ob->query("can_drink"))
+        {
+            write(ob->name() + "怎么喝？\n");
+            return 1;
+        }
+        return ob->do_effect(me);
+    }
+
+    if (!mapp(ob->query("liquid")))
+        return notify_fail("你不知道怎么喝" + ob->name() + "... :)\n");
+
+    if (me->is_fighting())
+    {
+        write("你边打架边喝东西也不怕呛着？\n");
+        return 1;
+    }
+
+    if (!ob->query("liquid/remaining"))
+    {
+        write(ob->name() + (ob->query("liquid/name") ? "里的" + ob->query("liquid/name") + "已经被喝得一滴也不剩了。\n" : "是空的。\n"));
+        if (me->query("env/auto_drinkout") &&
+            environment(ob) != environment(me))
+        {
+            message_vision("$N丢下一个$n。\n", me, ob);
+            ob->move(environment(me));
+        }
+        return 1;
+    }
+
+    if ((int)me->query("water") > me->max_water_capacity())
+    {
+        write("你已经喝太多了，再也灌不下一滴水了。\n");
+        return 1;
+    }
+
+    ob->add("liquid/remaining", -1);
+    message_vision("$N拿起" + ob->name() + "咕噜噜地喝了几口" +
+                       ob->query("liquid/name") + "。\n",
+                   me);
+    me->add("water", 30);
+
+    ob->do_effect();
+    if (!ob->query("liquid/remaining"))
+    {
+        write("你已经将" + ob->name() + "里的" + ob->query("liquid/name") + "喝得一滴也不剩了。\n");
+        ob->clear_effect();
+        if (me->query("env/auto_drinkout") &&
+            environment(ob) == me)
+        {
+            message_vision("$N丢下一个$n。\n", me, ob);
+            ob->move(environment(me));
+        }
+        return 1;
+    }
+
+    switch (ob->query("liquid/type"))
+    {
+    case "alcohol":
+        me->apply_condition("drunk",
+                            (int)me->query_condition("drunk") +
+                            (int)ob->query("liquid/drunk_apply"));
+        break;
+    }
+
+    if (!me->is_busy() && need_busy)
+        me->start_busy(need_busy);
+    return 1;
+}
+
 int main(object me, string arg)
 {
     string from;
     object from_ob;
     object ob;
-    object *guard;
     int search_flag;
     //      string prefix;
     int need_busy;
@@ -89,90 +179,7 @@ int main(object me, string arg)
             return notify_fail("你身上没有这样东西，附近也没有。\n");
     }
 
-    if (me->is_busy())
-    {
-        write("你上一个动作还没有完成。\n");
-        return 1;
-    }
-
-    if (guard = ob->query_temp("guarded"))
-    {
-        guard = filter_array(guard, (: objectp($1) && present($1, environment($(me))) &&
-                                       living($1) && ($1 != $(me)) :));
-        if (sizeof(guard))
-            return notify_fail(guard[0]->name() + "正守在" + ob->name() + "一旁，防止任何人拿走。\n");
-    }
-
-    if (ob->query("only_do_effect"))
-    {
-        if (!ob->query("can_drink"))
-        {
-            write(ob->name() + "怎么喝？\n");
-            return 1;
-        }
-
-        return ob->do_effect(me);
-    }
-
-    if (!mapp(ob->query("liquid")))
-        return notify_fail("你不知道怎么喝" + ob->name() + "... :)\n");
-
-    if (me->is_fighting())
-    {
-        write("你边打架边喝东西也不怕呛着？\n");
-        return 1;
-    }
-
-    if (!ob->query("liquid/remaining"))
-    {
-        write(ob->name() + (ob->query("liquid/name") ? "里的" + ob->query("liquid/name") + "已经被喝得一滴也不剩了。\n" : "是空的。\n"));
-        if (me->query("env/auto_drinkout") &&
-            environment(ob) != environment(me))
-        {
-            message_vision("$N丢下一个$n。\n", me, ob);
-            ob->move(environment(me));
-        }
-        return 1;
-    }
-
-    if ((int)me->query("water") > me->max_water_capacity())
-    {
-        write("你已经喝太多了，再也灌不下一滴水了。\n");
-        return 1;
-    }
-
-    ob->add("liquid/remaining", -1);
-    message_vision("$N拿起" + ob->name() + "咕噜噜地喝了几口" +
-                       ob->query("liquid/name") + "。\n",
-                   me);
-    me->add("water", 30);
-
-    ob->do_effect();
-    if (!ob->query("liquid/remaining"))
-    {
-        write("你已经将" + ob->name() + "里的" + ob->query("liquid/name") + "喝得一滴也不剩了。\n");
-        ob->clear_effect();
-        if (me->query("env/auto_drinkout") &&
-            environment(ob) == me)
-        {
-            message_vision("$N丢下一个$n。\n", me, ob);
-            ob->move(environment(me));
-        }
-        return 1;
-    }
-
-    switch (ob->query("liquid/type"))
-    {
-    case "alcohol":
-        me->apply_condition("drunk",
-                            (int)me->query_condition("drunk") +
-                            (int)ob->query("liquid/drunk_apply"));
-        break;
-    }
-
-    if (!me->is_busy() && need_busy)
-        me->start_busy(need_busy);
-    return 1;
+    return do_drink(me, ob, need_busy);
 }
 
 int help(object me)
