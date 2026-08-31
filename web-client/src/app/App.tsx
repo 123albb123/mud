@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CharacterPanel } from '../features/character/CharacterPanel';
 import { EquipmentPanel } from '../features/equipment/EquipmentPanel';
 import { InventoryPanel } from '../features/inventory/InventoryPanel';
+import { RoomEntities } from '../features/room/RoomEntities';
 import { RoomPanel } from '../features/room/RoomPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
 import { Terminal } from '../features/terminal/Terminal';
@@ -75,6 +76,13 @@ export const App = () => {
                 <aside className="sidebar">
                     <CharacterPanel vitals={client.vitals} />
                     <RoomPanel room={client.room} disabled={!connected} onMove={client.sendCommand} />
+                    <RoomEntities
+                        disabled={!connected}
+                        entities={client.entities}
+                        inventory={client.inventory}
+                        onAction={client.sendEntityAction}
+                        onGive={client.sendEntityGive}
+                    />
                     <div className="item-entrypoints" aria-label="角色物品">
                         <button
                             aria-pressed={activePanel === 'inventory'}

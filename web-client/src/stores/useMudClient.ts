@@ -5,6 +5,9 @@ import {
     GMCP_INITIAL_GETS,
     GMCP_SUPPORTS,
     parseGMCP,
+    toRoomEntitiesSnapshot,
+    toWebEntityActionRequest,
+    toWebEntityGiveRequest,
     toWebItemActionRequest,
     toCharacterVitals,
     toEquipmentSnapshot,
@@ -13,6 +16,7 @@ import {
     type CharacterVitals,
     type EquipmentSlot,
     type InventoryItem,
+    type RoomEntity,
     type RoomInfo,
 } from '../protocol/gmcp/gmcp';
 import { TelnetParser } from '../protocol/telnet/TelnetParser';
@@ -38,6 +42,7 @@ export const useMudClient = () => {
     ]);
     const [vitals, setVitals] = useState<CharacterVitals | null>(null);
     const [room, setRoom] = useState<RoomInfo | null>(null);
+    const [entities, setEntities] = useState<RoomEntity[]>([]);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [equipment, setEquipment] = useState<EquipmentSlot[]>([]);
     const [equipmentSlotOrder, setEquipmentSlotOrder] = useState<string[]>([]);
@@ -50,12 +55,15 @@ export const useMudClient = () => {
     const debugSequence = useRef(0);
     const inventoryRevisionRef = useRef(-1);
     const equipmentRevisionRef = useRef(-1);
+    const entitiesRevisionRef = useRef(-1);
+    const gmcpStateRequestedRef = useRef(false);
 
     const requestGMCPState = useCallback(() => {
         const parser = parserRef.current;
-        if (!parser) {
+        if (!parser || gmcpStateRequestedRef.current) {
             return;
         }
+        gmcpStateRequestedRef.current = true;
         parser.sendGMCP('Core.Hello', GMCP_CLIENT_HELLO);
         parser.sendGMCP('Core.Supports.Set', GMCP_SUPPORTS);
         GMCP_INITIAL_GETS.forEach((packageName) => parser.sendGMCP(packageName));
@@ -87,7 +95,7 @@ export const useMudClient = () => {
             return;
         }
 
-        if (message.packageName === 'Core.Hello') {
+        if (message.packageName === 'Server.Hello' || message.packageName === 'Core.Hello') {
             requestGMCPState();
         } else if (message.packageName === 'Char.Vitals') {
             const nextVitals = toCharacterVitals(message.payload);
@@ -98,6 +106,12 @@ export const useMudClient = () => {
             const nextRoom = toRoomInfo(message.payload);
             if (nextRoom) {
                 setRoom(nextRoom);
+            }
+        } else if (message.packageName === 'Room.Entities') {
+            const nextEntities = toRoomEntitiesSnapshot(message.payload);
+            if (nextEntities && nextEntities.revision >= entitiesRevisionRef.current) {
+                entitiesRevisionRef.current = nextEntities.revision;
+                setEntities(nextEntities.entities);
             }
         } else if (message.packageName === 'Char.Inventory') {
             const nextInventory = toInventorySnapshot(message.payload);
@@ -120,7 +134,9 @@ export const useMudClient = () => {
             send: (bytes) => connectionRef.current?.sendBytes(bytes),
             onText: (bytes) => appendText(decoderRef.current.decode(bytes, { stream: true })),
             onGMCP: handleGMCP,
-            onGMCPEnabled: requestGMCPState,
+            // The player object sends Server.Hello after login. Requesting
+            // snapshots during Telnet negotiation targets only the temporary
+            // login object and can lose the initial player state.
             onEcho: setServerSensitive,
             onDebug: appendDebug,
             terminalType: 'YH-WEB-STAGE1',
@@ -138,14 +154,18 @@ export const useMudClient = () => {
                     ansiRef.current.reset();
                     inventoryRevisionRef.current = -1;
                     equipmentRevisionRef.current = -1;
+                    entitiesRevisionRef.current = -1;
+                    gmcpStateRequestedRef.current = false;
                     setVitals(null);
                     setRoom(null);
+                    setEntities([]);
                     setInventory([]);
                     setEquipment([]);
                     setEquipmentSlotOrder([]);
                 } else if (state === 'closed') {
                     setVitals(null);
                     setRoom(null);
+                    setEntities([]);
                     setInventory([]);
                     setEquipment([]);
                     setEquipmentSlotOrder([]);
@@ -179,11 +199,14 @@ export const useMudClient = () => {
     const connect = useCallback((url: string) => {
         setVitals(null);
         setRoom(null);
+        setEntities([]);
         setInventory([]);
         setEquipment([]);
         setEquipmentSlotOrder([]);
         inventoryRevisionRef.current = -1;
         equipmentRevisionRef.current = -1;
+        entitiesRevisionRef.current = -1;
+        gmcpStateRequestedRef.current = false;
         setServerSensitive(false);
         connectionRef.current?.connect(url, ['telnet']);
     }, []);
@@ -207,12 +230,31 @@ export const useMudClient = () => {
         parser.sendGMCP('Web.Item.Action', request);
     }, []);
 
+    const sendEntityAction = useCallback((entityId: string, action: string, text?: string) => {
+        const parser = parserRef.current;
+        const request = toWebEntityActionRequest(entityId, action, text);
+        if (!parser || !request) {
+            return;
+        }
+        parser.sendGMCP('Web.Entity.Action', request);
+    }, []);
+
+    const sendEntityGive = useCallback((itemId: string, entityId: string) => {
+        const parser = parserRef.current;
+        const request = toWebEntityGiveRequest(itemId, entityId);
+        if (!parser || !request) {
+            return;
+        }
+        parser.sendGMCP('Web.Entity.Give', request);
+    }, []);
+
     return {
         connectionState,
         connectionDetail,
         segments,
         vitals,
         room,
+        entities,
         inventory,
         equipment,
         equipmentSlotOrder,
@@ -222,5 +264,7 @@ export const useMudClient = () => {
         disconnect,
         sendCommand,
         sendItemAction,
+        sendEntityAction,
+        sendEntityGive,
     };
 };

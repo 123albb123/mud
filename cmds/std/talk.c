@@ -5,40 +5,43 @@
 
 inherit F_CLEAN_UP;
 
-int main(object me, string arg) {
-    string npc_name, message;
-    object npc;
-
-    if (!arg || arg == "") {
-        return notify_fail("指令格式：talk NPC [内容]\n");
-    }
-
-    // 解析参数 - 支持about语法处理带空格的NPC名字
-    if (sscanf(arg, "%s about %s", npc_name, message) == 2) {
-        // 使用about语法成功解析
-    } else if (sscanf(arg, "%s %s", npc_name, message) != 2) {
-        npc_name = arg;
+int do_talk(object me, object npc, string message)
+{
+    if (!objectp(me) || !objectp(npc))
+        return 0;
+    if (!stringp(message) || message == "")
         message = "你好";
-    }
+    if (!function_exists("accept_talk", npc))
+        return notify_fail(npc->name() + "似乎不想和你聊天。\n");
 
-    // 查找NPC
-    npc = present(npc_name, environment(me));
-    if (!npc) {
-        return notify_fail("这里没有" + npc_name + "。\n");
-    }
-
-    // 检查是否是AI NPC
-    // if (!function_exists("accept_talk", npc)) {
-    //     return notify_fail(npc->name() + "似乎不想和你聊天。\n");
-    // }
-
-    // 发送对话请求
     if (npc->accept_talk(me, message)) {
         write("你对" + npc->name() + "说：" + message + "\n");
         return 1;
     }
 
     return notify_fail(npc->name() + "似乎不想和你聊天。\n");
+}
+
+int main(object me, string arg)
+{
+    string npc_name, message;
+    object npc;
+
+    if (!arg || arg == "")
+        return notify_fail("指令格式：talk NPC [内容]\n");
+
+    if (sscanf(arg, "%s about %s", npc_name, message) == 2)
+        ;
+    else if (sscanf(arg, "%s %s", npc_name, message) != 2)
+    {
+        npc_name = arg;
+        message = "你好";
+    }
+
+    npc = present(npc_name, environment(me));
+    if (!objectp(npc))
+        return notify_fail("这里没有" + npc_name + "。\n");
+    return do_talk(me, npc, message);
 }
 
 int help(object me) {

@@ -4,18 +4,18 @@
 
 inherit F_CLEAN_UP;
 
-int main(object me, string arg)
+int do_fight(object me, object obj)
 {
-    object obj, old_target;
+    object old_target;
+
+    if (!objectp(me) || !objectp(obj))
+        return 0;
 
     if (me->is_chatter())
         return 0;
 
     if (environment(me)->query("no_fight"))
         return notify_fail("这里禁止战斗。\n");
-
-    if (!arg || !objectp(obj = present(arg, environment(me))))
-        return notify_fail("你想攻击谁？\n");
 
     if (!obj->is_character())
         return notify_fail("看清楚一点，那并不是生物。\n");
@@ -61,6 +61,15 @@ int main(object me, string arg)
     }
 
     return 1;
+}
+
+int main(object me, string arg)
+{
+    object obj;
+
+    if (!arg || !objectp(obj = present(arg, environment(me))))
+        return notify_fail("你想攻击谁？\n");
+    return do_fight(me, obj);
 }
 
 int help(object me)

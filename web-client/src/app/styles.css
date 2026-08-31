@@ -356,6 +356,222 @@ button:disabled {
     padding: 6px 11px;
 }
 
+.entity-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 9px;
+}
+
+.entity-tabs button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    padding: 6px 9px;
+    border: 1px solid #443624;
+    border-radius: 6px;
+    color: #a99475;
+    background: #120e0b;
+    font-size: 11px;
+    text-align: left;
+}
+
+.entity-tabs button.active,
+.entity-tabs button:hover {
+    border-color: #8d663e;
+    color: #f0d59e;
+    background: #2a1d12;
+}
+
+.entity-tabs button span {
+    color: #7e6c55;
+    font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.entity-list {
+    display: grid;
+    gap: 6px;
+    max-height: 260px;
+    overflow: auto;
+}
+
+.entity-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    min-height: 52px;
+    padding: 8px 10px;
+    border: 1px solid #30261b;
+    border-radius: 7px;
+    color: #d8c39c;
+    background: #120e0b;
+    text-align: left;
+}
+
+.entity-card:hover,
+.entity-card.selected {
+    border-color: #8d663e;
+    background: #21180f;
+}
+
+.entity-card-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.entity-name,
+.entity-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.entity-name {
+    color: #e6d5b4;
+    font-size: 13px;
+}
+
+.entity-meta {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+    color: #8f806d;
+    font-size: 10px;
+}
+
+.entity-action-count {
+    flex: 0 0 auto;
+    color: #756958;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.empty-entity-state {
+    margin: 12px 0 4px;
+    color: #8e806e;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.entity-detail {
+    margin-top: 10px;
+    padding-top: 11px;
+    border-top: 1px solid #3a2e21;
+}
+
+.entity-detail-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 9px;
+}
+
+.entity-detail-heading strong {
+    color: #e7cf9e;
+    font-size: 14px;
+}
+
+.entity-close {
+    min-height: 32px;
+    padding: 4px 9px;
+    border: 1px solid #4c4031;
+    border-radius: 5px;
+    color: #bfae94;
+    background: #211a13;
+    font-size: 11px;
+}
+
+.entity-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.entity-actions button,
+.entity-message-form button,
+.entity-give-form button {
+    min-height: 40px;
+    padding: 6px 11px;
+    border: 1px solid #6b5133;
+    border-radius: 5px;
+    color: #ddc28e;
+    background: #251b12;
+    font-size: 12px;
+}
+
+.entity-actions button:hover,
+.entity-message-form button:enabled:hover,
+.entity-give-form button:enabled:hover {
+    border-color: #b07d40;
+    background: #352518;
+}
+
+.entity-message-form,
+.entity-give-form {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.entity-message-form label,
+.entity-give-form label {
+    color: #a99475;
+    font-size: 11px;
+}
+
+.entity-message-form > div,
+.entity-give-form > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+}
+
+.entity-message-form .entity-message-modes {
+    display: flex;
+    grid-template-columns: none;
+}
+
+.entity-message-modes button {
+    min-height: 32px;
+    padding: 4px 9px;
+    border: 1px solid #4c4031;
+    border-radius: 5px;
+    color: #a99475;
+    background: #120e0b;
+    font-size: 11px;
+}
+
+.entity-message-modes button.active,
+.entity-message-modes button:hover {
+    border-color: #8d663e;
+    color: #f0d59e;
+    background: #2a1d12;
+}
+
+.entity-message-form input,
+.entity-give-form select {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 7px 9px;
+    border: 1px solid #4f3d29;
+    border-radius: 5px;
+    outline: none;
+    color: #f0e3cc;
+    background: #090806;
+    font-size: 12px;
+}
+
+.entity-message-form input:focus,
+.entity-give-form select:focus {
+    border-color: #aa7c45;
+}
+
 .item-entrypoints {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -840,6 +1056,30 @@ button:disabled {
         padding: 9px;
         border-right: 0;
         border-bottom: 1px solid #3a2e21;
+    }
+
+    .entity-panel {
+        grid-column: 1 / -1;
+    }
+
+    .entity-list {
+        max-height: 145px;
+    }
+
+    .entity-detail.entity-sheet {
+        position: fixed;
+        z-index: 8;
+        right: 8px;
+        bottom: calc(74px + env(safe-area-inset-bottom));
+        left: 8px;
+        max-height: min(52dvh, 420px);
+        margin: 0;
+        overflow: auto;
+        padding: 13px 13px calc(13px + env(safe-area-inset-bottom));
+        border: 1px solid #795b38;
+        border-radius: 10px;
+        background: #0f0c09;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.78);
     }
 
     .panel {

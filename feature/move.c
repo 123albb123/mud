@@ -219,6 +219,8 @@ varargs int move(mixed dest, int raw)
     if (interactive(me))
     {
         me->gmcp("Room.Info.Get");
+        if (function_exists("gmcp_room_entities_changed", me))
+            me->gmcp_room_entities_changed();
     }
 
     return 1;

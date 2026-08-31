@@ -1,5 +1,6 @@
 #define GMCP_LOG 50
 #define GMCP_ITEMS_VERSION 1
+#define GMCP_ENTITIES_VERSION 1
 
 nosave string *gmcp_log = ({});
 private nosave mapping gmcp_room_ids = ([]);
@@ -16,6 +17,13 @@ private nosave mapping gmcp_support_versions = ([]);
 private nosave mapping gmcp_client_info = ([]);
 private nosave int gmcp_inventory_refresh_pending;
 private nosave int gmcp_equipment_refresh_pending;
+private nosave mapping gmcp_entity_ids = ([]);
+private nosave string gmcp_entity_session;
+private nosave int gmcp_entity_sequence;
+private nosave int gmcp_entities_revision;
+private nosave string gmcp_entities_fingerprint;
+private nosave int gmcp_entities_refresh_pending;
+private nosave int gmcp_entities_polling;
 
 varargs void sendGMCP(mapping data, mixed *modules...);
 
@@ -378,6 +386,210 @@ private mapping gmcp_equipment_snapshot()
     ]);
 }
 
+private string query_gmcp_entity_id(object entity)
+{
+    string key;
+
+    if (!objectp(entity))
+        return "";
+
+    if (!mapp(gmcp_entity_ids))
+        gmcp_entity_ids = ([]);
+    if (!stringp(gmcp_entity_session))
+        gmcp_entity_session = sprintf("%08x", random(0x7fffffff));
+
+    key = file_name(entity);
+    if (!stringp(gmcp_entity_ids[key]))
+    {
+        gmcp_entity_sequence++;
+        gmcp_entity_ids[key] = sprintf("e-%s-%04d",
+                                       gmcp_entity_session,
+                                       gmcp_entity_sequence);
+    }
+
+    return gmcp_entity_ids[key];
+}
+
+private void gmcp_cleanup_entity_ids(object *entities)
+{
+    mapping active_entities;
+    string *keys_to_check;
+    string key;
+    int i;
+
+    if (!mapp(gmcp_entity_ids))
+        return;
+
+    active_entities = ([]);
+    for (i = 0; i < sizeof(entities); i++)
+    {
+        if (objectp(entities[i]))
+            active_entities[file_name(entities[i])] = 1;
+    }
+
+    keys_to_check = keys(gmcp_entity_ids);
+    for (i = 0; i < sizeof(keys_to_check); i++)
+    {
+        key = keys_to_check[i];
+        if (!active_entities[key])
+            map_delete(gmcp_entity_ids, key);
+    }
+}
+
+private int gmcp_entity_is_corpse(object entity)
+{
+    return gmcp_item_is(entity, "is_corpse");
+}
+
+private string gmcp_entity_type(object entity)
+{
+    if (!objectp(entity))
+        return "unknown";
+    if (gmcp_entity_is_corpse(entity))
+        return "corpse";
+    if (userp(entity))
+        return "player";
+    if (gmcp_item_is(entity, "is_character"))
+        return "npc";
+    return "item";
+}
+
+private int gmcp_entity_is_visible(object entity)
+{
+    mixed result;
+
+    if (!objectp(entity))
+        return 0;
+    if (catch(result = this_object()->visible(entity)))
+        return 0;
+    return result ? 1 : 0;
+}
+
+private string gmcp_entity_name(object entity)
+{
+    mixed value;
+
+    if (!objectp(entity))
+        return "";
+    if (!catch(value = entity->name()) && stringp(value))
+        return gmcp_item_text(value);
+    if (!catch(value = entity->short()) && stringp(value))
+        return gmcp_item_text(value);
+    return "";
+}
+
+private string gmcp_entity_title(object entity, string type)
+{
+    mixed value;
+
+    if (!objectp(entity))
+        return "";
+    value = gmcp_item_query(entity, "title");
+    if (stringp(value))
+        return gmcp_item_text(value);
+    if (type == "npc" || type == "player")
+        return "";
+    if (!catch(value = entity->short()) && stringp(value))
+        return gmcp_item_text(value);
+    return "";
+}
+
+private mixed *gmcp_entity_actions(object entity, string type)
+{
+    mixed *actions;
+    object room;
+
+    if (!objectp(entity))
+        return ({});
+
+    actions = ({(["id": "look"])});
+    room = environment(this_object());
+
+    if (type == "item" || type == "corpse")
+    {
+        if (!gmcp_item_query(entity, "no_get") && !living(entity))
+            actions += ({(["id": "get"])});
+        return actions;
+    }
+
+    if (type != "npc" && type != "player")
+        return actions;
+
+    if (gmcp_item_query(entity, "can_speak"))
+        actions += ({(["id": "ask"])});
+    if (function_exists("accept_talk", entity))
+        actions += ({(["id": "talk"])});
+    if (entity != this_object() && living(entity))
+        actions += ({(["id": "give"])});
+
+    if (type != "npc" || !objectp(room) || room->query("no_fight"))
+        return actions;
+    if (living(entity))
+        actions += ({(["id": "fight"])});
+    if (!gmcp_entity_is_corpse(entity))
+        actions += ({(["id": "kill"])});
+    return actions;
+}
+
+private mapping gmcp_entity_record(object entity)
+{
+    string type;
+    string name;
+
+    if (!objectp(entity) || entity == this_object() ||
+        environment(entity) != environment(this_object()) ||
+        !gmcp_entity_is_visible(entity))
+        return 0;
+
+    type = gmcp_entity_type(entity);
+    if (type == "unknown")
+        return 0;
+    name = gmcp_entity_name(entity);
+    if (name == "")
+        return 0;
+
+    return ([
+        "entity_id": query_gmcp_entity_id(entity),
+        "type"     : type,
+        "name"     : name,
+        "title"    : gmcp_entity_title(entity, type),
+        "actions"  : gmcp_entity_actions(entity, type),
+    ]);
+}
+
+private mapping gmcp_entities_snapshot()
+{
+    object room;
+    object *entities;
+    object *active_entities;
+    mixed *records;
+    mapping record;
+    int i;
+
+    room = environment(this_object());
+    entities = objectp(room) ? all_inventory(room) : ({});
+    active_entities = ({});
+    records = ({});
+    for (i = 0; i < sizeof(entities); i++)
+    {
+        record = gmcp_entity_record(entities[i]);
+        if (!mapp(record))
+            continue;
+        active_entities += ({entities[i]});
+        records += ({record});
+    }
+    gmcp_cleanup_entity_ids(active_entities);
+    records = sort_array(records, (: strcmp($1["entity_id"], $2["entity_id"]) :));
+
+    return ([
+        "version" : GMCP_ENTITIES_VERSION,
+        "snapshot": 1,
+        "revision": gmcp_entities_revision,
+        "sequence": gmcp_entities_revision,
+        "entities": records,
+    ]);
+}
+
 private string gmcp_snapshot_fingerprint(mixed value)
 {
     string result;
@@ -451,7 +663,72 @@ varargs void gmcp_refresh_items(int force)
     gmcp_refresh_equipment(force);
 }
 
-private void gmcp_flush_item_refresh()
+varargs void gmcp_refresh_room_entities(int force)
+{
+    mapping entities;
+    string entities_fingerprint;
+    int send_entities;
+
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Room.Entities"))
+        return;
+
+    entities = gmcp_entities_snapshot();
+    entities_fingerprint = gmcp_snapshot_fingerprint(entities["entities"]);
+    send_entities = force || entities_fingerprint != gmcp_entities_fingerprint;
+
+    if (send_entities)
+    {
+        if (entities_fingerprint != gmcp_entities_fingerprint)
+            gmcp_entities_revision++;
+        entities["revision"] = gmcp_entities_revision;
+        entities["sequence"] = gmcp_entities_revision;
+        sendGMCP(entities, "Room", "Entities");
+        gmcp_entities_fingerprint = entities_fingerprint;
+    }
+}
+
+void gmcp_poll_room_entities()
+{
+    gmcp_entities_polling = 0;
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Room.Entities"))
+        return;
+
+    gmcp_refresh_room_entities();
+    gmcp_entities_polling = 1;
+    call_out("gmcp_poll_room_entities", 1);
+}
+
+private void gmcp_start_room_entity_poll()
+{
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Room.Entities") ||
+        gmcp_entities_polling)
+        return;
+
+    gmcp_entities_polling = 1;
+    call_out("gmcp_poll_room_entities", 1);
+}
+
+void gmcp_flush_room_entity_refresh()
+{
+    gmcp_entities_refresh_pending = 0;
+    gmcp_refresh_room_entities();
+}
+
+void gmcp_room_entities_changed()
+{
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Room.Entities") ||
+        gmcp_entities_refresh_pending)
+        return;
+
+    gmcp_entities_refresh_pending = 1;
+    call_out("gmcp_flush_room_entity_refresh", 0);
+}
+
+void gmcp_flush_item_refresh()
 {
     int refresh_inventory;
     int refresh_equipment;
@@ -500,6 +777,9 @@ int gmcp_item_command(string verb)
     {
     case "get":
     case "drop":
+        gmcp_room_entities_changed();
+        gmcp_inventory_changed();
+        return 1;
     case "give":
     case "put":
     case "eat":
@@ -572,6 +852,7 @@ private void gmcp_enable()
         "supports": ([
             "Char.Vitals"    : 1,
             "Room.Info"      : 1,
+            "Room.Entities"  : GMCP_ENTITIES_VERSION,
             "Char.Inventory" : GMCP_ITEMS_VERSION,
             "Char.Equipment": GMCP_ITEMS_VERSION,
         ]),
@@ -822,6 +1103,255 @@ private void gmcp_handle_web_item_action(string payload)
     gmcp_item_action_succeeded(action);
 }
 
+private int gmcp_entity_action_is_allowed(string action)
+{
+    return member_array(action, ({
+        "look", "get", "talk", "ask", "fight", "kill", "give",
+    })) != -1;
+}
+
+private object gmcp_find_entity(string entity_id)
+{
+    object room;
+    object *entities;
+    string key;
+    int i;
+
+    if (!stringp(entity_id) || !mapp(gmcp_entity_ids))
+        return 0;
+
+    room = environment(this_object());
+    if (!objectp(room))
+        return 0;
+    entities = all_inventory(room);
+    for (i = 0; i < sizeof(entities); i++)
+    {
+        if (!objectp(entities[i]) || entities[i] == this_object() ||
+            !gmcp_entity_is_visible(entities[i]))
+            continue;
+        key = file_name(entities[i]);
+        if (gmcp_entity_ids[key] == entity_id)
+            return entities[i];
+    }
+    return 0;
+}
+
+private int gmcp_entity_action_available(object entity, string action)
+{
+    mixed *actions;
+    mapping entity_action;
+    string type;
+    int i;
+
+    if (!objectp(entity) || environment(entity) != environment(this_object()) ||
+        !gmcp_entity_is_visible(entity) || !gmcp_entity_action_is_allowed(action))
+        return 0;
+
+    type = gmcp_entity_type(entity);
+    actions = gmcp_entity_actions(entity, type);
+    for (i = 0; i < sizeof(actions); i++)
+    {
+        entity_action = actions[i];
+        if (mapp(entity_action) && entity_action["id"] == action)
+            return 1;
+    }
+    return 0;
+}
+
+private string gmcp_entity_request_text(mixed value, int required, int limit)
+{
+    if (!stringp(value))
+        return required ? 0 : "";
+    if (strsrch(value, "\n") != -1 || strsrch(value, "\r") != -1 ||
+        strlen(value) > limit)
+        return 0;
+    if (required && value == "")
+        return 0;
+    return value;
+}
+
+private int gmcp_run_entity_action(object entity, string action, string text)
+{
+    mixed result;
+
+    if (!objectp(entity) || environment(entity) != environment(this_object()))
+        return 0;
+
+    switch (action)
+    {
+    case "look":
+        if (gmcp_entity_type(entity) == "npc" ||
+            gmcp_entity_type(entity) == "player")
+        {
+            if (catch(result = call_other("/cmds/std/look", "look_living",
+                                          this_object(), entity)))
+                return -1;
+        }
+        else if (catch(result = call_other("/cmds/std/look", "look_item",
+                                            this_object(), entity)))
+            return -1;
+        break;
+    case "get":
+        if (catch(result = call_other("/cmds/std/get", "do_get",
+                                      this_object(), entity, 0)))
+            return -1;
+        break;
+    case "talk":
+        if (catch(result = call_other("/cmds/std/talk", "do_talk",
+                                      this_object(), entity, text)))
+            return -1;
+        break;
+    case "ask":
+        if (catch(result = call_other("/cmds/std/ask", "do_ask",
+                                      this_object(), entity, text)))
+            return -1;
+        break;
+    case "fight":
+        if (catch(result = call_other("/cmds/std/fight", "do_fight",
+                                      this_object(), entity)))
+            return -1;
+        break;
+    case "kill":
+        if (catch(result = call_other("/cmds/std/kill", "do_kill",
+                                      this_object(), entity)))
+            return -1;
+        break;
+    default:
+        return 0;
+    }
+    return result ? 1 : 0;
+}
+
+private void gmcp_entity_action_failed(string message)
+{
+    write(message + "\n");
+    // Reconcile a stale request, but preserve revision/fingerprint deduplication
+    // so repeated stale clicks cannot create a snapshot storm.
+    gmcp_refresh_room_entities();
+}
+
+private void gmcp_entity_action_succeeded(string action)
+{
+    if (action == "get")
+    {
+        gmcp_room_entities_changed();
+        gmcp_inventory_changed();
+    }
+    else if (action == "fight" || action == "kill")
+        gmcp_room_entities_changed();
+}
+
+private void gmcp_handle_web_entity_action(string payload)
+{
+    mixed decoded;
+    mapping data;
+    object entity;
+    string entity_id;
+    string action;
+    string text;
+    int result;
+
+    if (catch(decoded = json_decode(payload)) || !mapp(decoded))
+    {
+        gmcp_entity_action_failed("附近实体操作请求无效。");
+        return;
+    }
+
+    data = decoded;
+    entity_id = data["entity_id"];
+    action = data["action"];
+    if (!stringp(entity_id) || !stringp(action) ||
+        !gmcp_entity_action_is_allowed(action))
+    {
+        gmcp_entity_action_failed("附近实体操作不被允许。");
+        return;
+    }
+
+    text = gmcp_entity_request_text(data["text"], action == "ask", 200);
+    if (!stringp(text))
+    {
+        gmcp_entity_action_failed("交谈内容无效。");
+        return;
+    }
+
+    entity = gmcp_find_entity(entity_id);
+    if (!objectp(entity))
+    {
+        gmcp_entity_action_failed("该实体已经不在附近了。");
+        return;
+    }
+    if (!gmcp_entity_action_available(entity, action))
+    {
+        gmcp_entity_action_failed("该实体当前不能执行这个操作。");
+        return;
+    }
+
+    result = gmcp_run_entity_action(entity, action, text);
+    if (result < 0)
+    {
+        gmcp_entity_action_failed("附近实体操作失败，请查看当前状态。");
+        return;
+    }
+    if (!result)
+    {
+        gmcp_entity_action_failed("附近实体操作未能完成，请查看当前状态。");
+        return;
+    }
+
+    gmcp_entity_action_succeeded(action);
+}
+
+private void gmcp_handle_web_entity_give(string payload)
+{
+    mixed decoded;
+    mapping data;
+    object item;
+    object entity;
+    string item_id;
+    string entity_id;
+    mixed result;
+
+    if (catch(decoded = json_decode(payload)) || !mapp(decoded))
+    {
+        gmcp_entity_action_failed("给予请求无效。");
+        return;
+    }
+
+    data = decoded;
+    item_id = data["item_id"];
+    entity_id = data["entity_id"];
+    if (!stringp(item_id) || !stringp(entity_id))
+    {
+        gmcp_entity_action_failed("给予请求无效。");
+        return;
+    }
+
+    item = gmcp_find_item(item_id);
+    entity = gmcp_find_entity(entity_id);
+    if (!objectp(item) || !objectp(entity) ||
+        !gmcp_entity_action_available(entity, "give"))
+    {
+        gmcp_entity_action_failed("物品或目标已经不再可用。");
+        gmcp_refresh_items(1);
+        return;
+    }
+
+    if (catch(result = call_other("/cmds/std/give", "do_give_to",
+                                  this_object(), item, entity)))
+    {
+        gmcp_entity_action_failed("给予操作失败，请查看当前状态。");
+        return;
+    }
+    if (!result)
+    {
+        gmcp_entity_action_failed("给予操作未能完成，请查看当前状态。");
+        return;
+    }
+
+    gmcp_inventory_changed();
+    gmcp_room_entities_changed();
+}
+
 // gmcp - provides an interface to GMCP data received from the client
 void gmcp(string req)
 {
@@ -857,7 +1387,10 @@ void gmcp(string req)
     else if (package == "Core.Supports.Set")
     {
         if (!catch(decoded = json_decode(payload)))
+        {
             gmcp_support_versions = gmcp_parse_supports(decoded);
+            gmcp_start_room_entity_poll();
+        }
     }
     else if (package == "Char.Vitals.Get")
     {
@@ -911,6 +1444,11 @@ void gmcp(string req)
             msp_oob("!!SOUND(Off)");
         }
     }
+    else if (package == "Room.Entities.Get")
+    {
+        gmcp_refresh_room_entities(1);
+        gmcp_start_room_entity_poll();
+    }
     else if (package == "Char.Inventory.Get")
     {
         gmcp_refresh_inventory(1);
@@ -922,5 +1460,13 @@ void gmcp(string req)
     else if (package == "Web.Item.Action")
     {
         gmcp_handle_web_item_action(payload);
+    }
+    else if (package == "Web.Entity.Action")
+    {
+        gmcp_handle_web_entity_action(payload);
+    }
+    else if (package == "Web.Entity.Give")
+    {
+        gmcp_handle_web_entity_give(payload);
     }
 }

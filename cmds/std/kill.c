@@ -4,22 +4,18 @@
 
 inherit F_CLEAN_UP;
 
-int main(object me, string arg)
+int do_kill(object me, object obj)
 {
-    object obj;
     string /**killer,*/ callname;
+
+    if (!objectp(me) || !objectp(obj))
+        return 0;
 
     if (me->is_chatter())
         return 0;
 
     if (environment(me)->query("no_fight"))
         return notify_fail("这里不准战斗。\n");
-
-    if (!arg)
-        return notify_fail("你想杀谁？\n");
-
-    if (!objectp(obj = present(arg, environment(me))))
-        return notify_fail("这里没有这个人。\n");
 
     if (!obj->is_character() || obj->is_corpse())
         return notify_fail("看清楚一点，那并不是活物。\n");
@@ -80,6 +76,17 @@ int main(object me, string arg)
         obj->fight_ob(me);
 
     return 1;
+}
+
+int main(object me, string arg)
+{
+    object obj;
+
+    if (!arg)
+        return notify_fail("你想杀谁？\n");
+    if (!objectp(obj = present(arg, environment(me))))
+        return notify_fail("这里没有这个人。\n");
+    return do_kill(me, obj);
 }
 
 int help(object me)

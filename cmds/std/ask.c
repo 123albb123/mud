@@ -16,21 +16,16 @@ string *msg_dunno = ({
     CYN "$n" CYN "看着$N" CYN "，皱了皱眉头，说道：“我从没听说过这事，你去问别人吧。”\n" NOR,
 });
 
-int main(object me, string arg)
+int do_ask(object me, object ob, string topic)
 {
-    string dest, topic, msg;
-    object ob;
+    string msg;
     //mapping inquiry;
     object env;
     mixed info;
 
     seteuid(getuid());
 
-    if (!arg)
-        return notify_fail("你要问谁什么事？\n");
-
-    if (sscanf(arg, "%s about %s", dest, topic) != 2 &&
-        sscanf(arg, "%s %s", dest, topic) != 2)
+    if (!objectp(me) || !objectp(ob) || !stringp(topic) || topic == "")
         return notify_fail("你要问谁什么事？\n");
 
     env = environment(me);
@@ -45,9 +40,6 @@ int main(object me, string arg)
         write("这个地方不能讲话。\n");
         return 1;
     }
-
-    if (!objectp(ob = present(dest, env)))
-        return notify_fail("这里没有这个人。\n");
 
     if (me->ban_say(1) && playerp(ob))
         return 0;
@@ -124,6 +116,23 @@ int main(object me, string arg)
         message_vision(element_of(msg_dunno), me, ob);
 
     return 1;
+}
+
+int main(object me, string arg)
+{
+    string dest;
+    string topic;
+    object ob;
+
+    if (!arg)
+        return notify_fail("你要问谁什么事？\n");
+    if (sscanf(arg, "%s about %s", dest, topic) != 2 &&
+        sscanf(arg, "%s %s", dest, topic) != 2)
+        return notify_fail("你要问谁什么事？\n");
+
+    if (!objectp(ob = present(dest, environment(me))))
+        return notify_fail("这里没有这个人。\n");
+    return do_ask(me, ob, topic);
 }
 
 // 从 npc 身上读取 inquiry

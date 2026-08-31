@@ -131,6 +131,30 @@ int main(object me, string arg)
     return 1;
 }
 
+int do_give_to(object me, object obj, object who)
+{
+    string no_accept;
+
+    if (!objectp(me) || !objectp(obj) || !objectp(who) ||
+        environment(obj) != me || environment(who) != environment(me))
+        return 0;
+    if (me == who)
+        return notify_fail("你自己给自己东西干吗？\n");
+    if (!living(who))
+        return notify_fail("你还是得等人家醒了再说吧。\n");
+    if (playerp(me) && stringp(no_accept = who->query("env/no_accept")))
+    {
+        if ((no_accept == "all" || no_accept == "ALL" ||
+             is_sub(me->query("id"), no_accept)) &&
+            !is_sub(me->query("id"), who->query("env/can_accept")))
+            return notify_fail("人家现在不想要什么东西。\n");
+    }
+    if (me->query_temp("is_riding") == obj)
+        return notify_fail("你正骑着它呢。\n");
+
+    return do_give(me, obj, who);
+}
+
 int do_give(object me, object obj, object who)
 {
     if (obj->query("no_drop"))

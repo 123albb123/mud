@@ -8,6 +8,9 @@ import {
     toEquipmentSnapshot,
     toInventorySnapshot,
     toRoomInfo,
+    toRoomEntitiesSnapshot,
+    toWebEntityActionRequest,
+    toWebEntityGiveRequest,
     toWebItemActionRequest,
 } from './gmcp';
 
@@ -60,12 +63,14 @@ describe('GMCP codec', () => {
         expect(GMCP_SUPPORTS).toEqual([
             'Char.Vitals 1',
             'Room.Info 1',
+            'Room.Entities 1',
             'Char.Inventory 1',
             'Char.Equipment 1',
         ]);
         expect(GMCP_INITIAL_GETS).toEqual([
             'Char.Vitals.Get',
             'Room.Info.Get',
+            'Room.Entities.Get',
             'Char.Inventory.Get',
             'Char.Equipment.Get',
         ]);
@@ -152,5 +157,61 @@ describe('GMCP codec', () => {
             slot_order: [],
             slots: [],
         })).toBeNull();
+    });
+
+    it('normalizes Room.Entities with opaque IDs, duplicate names, and allowlisted actions', () => {
+        const snapshot = toRoomEntitiesSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 4,
+            sequence: 4,
+            entities: [
+                {
+                    entity_id: 'e-session-0001',
+                    type: 'npc',
+                    name: '店小二',
+                    title: '客店伙计',
+                    actions: [{ id: 'look' }, { id: 'talk' }, { id: 'hack' }],
+                },
+                {
+                    entity_id: 'e-session-0002',
+                    type: 'item',
+                    name: '长剑',
+                    actions: [{ id: 'look' }, { id: 'get' }],
+                },
+                {
+                    entity_id: 'e-session-0002',
+                    type: 'item',
+                    name: '长剑',
+                    actions: [{ id: 'get' }],
+                },
+                { entity_id: '/clone/thing#1', type: 'item', name: '不应出现', actions: [] },
+                { entity_id: 'e-session-0003', type: 'player', name: '坏\n名字', actions: [] },
+            ],
+        });
+
+        expect(snapshot?.entities).toHaveLength(2);
+        expect(snapshot?.entities.map((entity) => entity.entity_id)).toEqual([
+            'e-session-0001',
+            'e-session-0002',
+        ]);
+        expect(snapshot?.entities[0].actions.map((action) => action.id)).toEqual(['look', 'talk']);
+    });
+
+    it('validates entity action and give requests without exposing paths or newlines', () => {
+        expect(toWebEntityActionRequest('e-session-0001', 'ask', '掌柜在哪里？')).toEqual({
+            entity_id: 'e-session-0001',
+            action: 'ask',
+            text: '掌柜在哪里？',
+        });
+        expect(toWebEntityActionRequest('e-session-0001', 'ask')).toBeNull();
+        expect(toWebEntityActionRequest('/clone/npc#1', 'look')).toBeNull();
+        expect(toWebEntityActionRequest('e-session-0001', 'look\n')).toBeNull();
+        expect(toWebEntityActionRequest('e-session-0001', 'talk', `${'x'.repeat(201)}`)).toBeNull();
+        expect(toWebEntityGiveRequest('i-session-0002', 'e-session-0001')).toEqual({
+            item_id: 'i-session-0002',
+            entity_id: 'e-session-0001',
+        });
+        expect(toWebEntityGiveRequest('i-session-0002', '/clone/npc#1')).toBeNull();
     });
 });
