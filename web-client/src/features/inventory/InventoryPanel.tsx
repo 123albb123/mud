@@ -3,6 +3,7 @@ import type { GMCPAction, InventoryItem } from '../../protocol/gmcp/gmcp';
 
 interface InventoryPanelProps {
     connected?: boolean;
+    embedded?: boolean;
     items: InventoryItem[];
     onAction: (itemId: string, action: string) => void;
 }
@@ -36,7 +37,7 @@ const actionLabels: Record<string, string> = {
 
 const actionLabel = (action: GMCPAction): string => action.label || actionLabels[action.id] || action.id;
 
-export const InventoryPanel = ({ connected = true, items, onAction }: InventoryPanelProps) => {
+export const InventoryPanel = ({ connected = true, embedded = false, items, onAction }: InventoryPanelProps) => {
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const selectedItem = useMemo(
         () => items.find((item) => item.item_id === selectedItemId) ?? null,
@@ -50,14 +51,13 @@ export const InventoryPanel = ({ connected = true, items, onAction }: InventoryP
     }, [selectedItem, selectedItemId]);
 
     return (
-        <section className="item-panel inventory-panel" aria-labelledby="inventory-title">
-            <div className="item-panel-heading">
+        <section aria-label={embedded ? '行囊内容' : undefined} aria-labelledby={embedded ? undefined : 'inventory-title'} className="item-panel inventory-panel">
+            {!embedded && <div className="item-panel-heading">
                 <div>
-                    <p className="eyebrow">CHAR · INVENTORY</p>
                     <h2 id="inventory-title">行囊</h2>
                 </div>
                 <span className="item-count">{items.length} 件</span>
-            </div>
+            </div>}
             {items.length === 0 ? (
                 <p className="empty-item-state">{connected ? '行囊中暂无物品' : '连接江湖后查看行囊'}</p>
             ) : (

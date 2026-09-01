@@ -3,6 +3,7 @@ import type { EquipmentSlot, GMCPAction } from '../../protocol/gmcp/gmcp';
 
 interface EquipmentPanelProps {
     connected?: boolean;
+    embedded?: boolean;
     slots: EquipmentSlot[];
     slotOrder: string[];
     onAction: (itemId: string, action: string) => void;
@@ -35,7 +36,7 @@ const actionLabels: Record<string, string> = {
 
 const actionLabel = (action: GMCPAction): string => action.label || actionLabels[action.id] || action.id;
 
-export const EquipmentPanel = ({ connected = true, slots, slotOrder, onAction }: EquipmentPanelProps) => {
+export const EquipmentPanel = ({ connected = true, embedded = false, slots, slotOrder, onAction }: EquipmentPanelProps) => {
     const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
     const slotMap = useMemo(() => new Map(slots.map((slot) => [slot.slot, slot])), [slots]);
     const occupiedSlotCount = slots.filter((slot) => Boolean(slot.item_id)).length;
@@ -48,14 +49,13 @@ export const EquipmentPanel = ({ connected = true, slots, slotOrder, onAction }:
     }, [selectedItem, selectedSlot]);
 
     return (
-        <section className="item-panel equipment-panel" aria-labelledby="equipment-title">
-            <div className="item-panel-heading">
+        <section aria-label={embedded ? '装备内容' : undefined} aria-labelledby={embedded ? undefined : 'equipment-title'} className="item-panel equipment-panel">
+            {!embedded && <div className="item-panel-heading">
                 <div>
-                    <p className="eyebrow">CHAR · EQUIPMENT</p>
                     <h2 id="equipment-title">装备</h2>
                 </div>
                 <span className="item-count">{connected ? occupiedSlotCount + ' 格已用' : '未连接'}</span>
-            </div>
+            </div>}
             {slotOrder.length === 0 ? (
                 <p className="empty-item-state">{connected ? '暂无装备数据' : '连接江湖后查看装备'}</p>
             ) : (

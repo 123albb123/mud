@@ -71,7 +71,7 @@ const PlayerCard = ({ connected, vitals, status }: { connected: boolean; vitals:
     const hasState = Boolean(vitals || status);
     return (
         <section className="player-card surface-card" aria-labelledby="player-card-title">
-            <div className="player-card-head"><div className="avatar-seal"><Icon name="user" size={28} /></div><div className="player-identity"><p className="eyebrow">人物状态 · CHARACTER</p><h2 id="player-card-title">人物状态</h2></div><span className={'state-chip ' + (connected ? '' : 'muted')}>{connected ? '实时' : '未连接'}</span></div>
+            <div className="player-card-head"><div className="avatar-seal"><Icon name="user" size={28} /></div><div className="player-identity"><h2 id="player-card-title">人物状态</h2></div><span className={'state-chip ' + (connected ? '' : 'muted')}>{connected ? '实时' : '未连接'}</span></div>
             {!hasState ? <div className="panel-empty-state"><Icon name="user" size={22} /><strong>{connected ? '当前没有人物状态' : '尚未连接江湖'}</strong><span>{connected ? '等待服务器发送人物快照' : '连接服务器后显示人物状态'}</span></div> : <>
                 {vitals && <div className="resource-grid"><ResourceMeter label="气血" current={vitals.hp} maximum={vitals.max_hp} tone="red" /><ResourceMeter label="精" current={vitals.jing} maximum={vitals.max_jing} tone="blue" /><ResourceMeter label="精力" current={vitals.jingli} maximum={vitals.max_jingli} tone="jade" /><ResourceMeter label="内力" current={vitals.neili} maximum={vitals.max_neili} tone="violet" /></div>}
                 {status && <div className="player-facts"><div><span>战斗经验</span><strong>{formatNumber(status.exp)}</strong></div><div><span>潜能</span><strong>{formatNumber(status.potential)}</strong></div></div>}
@@ -81,8 +81,8 @@ const PlayerCard = ({ connected, vitals, status }: { connected: boolean; vitals:
     );
 };
 
-const PageHeading = ({ eyebrow, title, description, icon, action }: { eyebrow: string; title: string; description: string; icon: IconName; action?: ReactNode }) => (
-    <div className="page-heading"><div className="page-heading-icon"><Icon name={icon} size={26} /></div><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-heading-description">{description}</p></div>{action && <div className="page-heading-action">{action}</div>}</div>
+const PageHeading = ({ title, description, icon, action }: { title: string; description: string; icon: IconName; action?: ReactNode }) => (
+    <div className="page-heading"><div className="page-heading-icon"><Icon name={icon} size={26} /></div><div><h1>{title}</h1><p className="page-heading-description">{description}</p></div>{action && <div className="page-heading-action">{action}</div>}</div>
 );
 
 const DockNav = ({ activeView, onNavigate, questCount, messageCount }: { activeView: ViewKey; onNavigate: (view: ViewKey) => void; questCount: number; messageCount: number }) => {
@@ -99,15 +99,14 @@ const DockNav = ({ activeView, onNavigate, questCount, messageCount }: { activeV
 
 const MapView = () => (
     <main className="page-main"><div className="page-surface map-surface">
-        <PageHeading description="地图与探索功能将在后续阶段接入真实房间数据。" eyebrow="WORLD · MAP" icon="map" title="江湖地图" action={<span className="map-status map-status-muted">开发中</span>} />
-        <div className="map-board"><div className="map-grid-lines" /><div className="map-water water-one" /><div className="map-water water-two" /><div className="map-mountain mountain-one"><Icon name="mountain" size={52} /></div><div className="map-mountain mountain-two"><Icon name="mountain" size={38} /></div><div className="map-placeholder"><div className="map-placeholder-icon"><Icon name="map" size={36} /></div><strong>江湖地图</strong><span>真实地图数据尚未接入</span><em>开发中</em></div><div className="map-compass"><Icon name="compass" size={42} /><span>北</span></div></div>
-        <div className="map-footer-note"><Icon name="spark" size={18} /><span>当前仅保留视觉框架，真实探索地图将在后续阶段接入。</span></div>
+        <PageHeading description="真实地图功能将在后续接入。" icon="map" title="地图" action={<span className="map-status map-status-muted">开发中</span>} />
+        <div className="map-board"><div className="map-grid-lines" /><div className="map-water water-one" /><div className="map-water water-two" /><div className="map-mountain mountain-one"><Icon name="mountain" size={52} /></div><div className="map-mountain mountain-two"><Icon name="mountain" size={38} /></div><div className="map-placeholder"><div className="map-placeholder-icon"><Icon name="map" size={36} /></div><strong>暂无地图数据</strong><span>真实地图数据尚未接入</span><em>开发中</em></div><div className="map-compass"><Icon name="compass" size={42} /><span>北</span></div></div>
     </div></main>
 );
 
-const HelpView = ({ onOpenSettings }: { onOpenSettings: () => void }) => (
+const HelpView = () => (
     <main className="page-main"><div className="page-surface help-surface">
-        <PageHeading description="熟悉你的命令，才能在江湖中走得更远。" eyebrow="GUIDE · HELP" icon="help" title="行走江湖" action={<button className="outline-button" onClick={onOpenSettings} type="button"><Icon name="settings" size={16} /> 协议调试</button>} />
+        <PageHeading description="查看客户端操作与命令说明。" icon="help" title="帮助" />
         <div className="help-grid">
             <article className="help-card"><div className="help-card-icon"><Icon name="arrow" size={21} /></div><div><h2>方向移动</h2><p>使用北、南、东、西或键盘方向键，探索当前房间的真实出口。</p><div className="shortcut-row"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>快速行走</span></div></div></article>
             <article className="help-card"><div className="help-card-icon"><Icon name="sword" size={21} /></div><div><h2>江湖命令</h2><p>在底部命令栏输入原版 MUD 命令，按 Enter 发送。</p><div className="command-example">look <span>查看周围</span></div></div></article>
@@ -119,7 +118,7 @@ const HelpView = ({ onOpenSettings }: { onOpenSettings: () => void }) => (
 );
 
 const DebugPanel = ({ entries, onClose }: { entries: Array<{ id: number; time: string; message: string }>; onClose: () => void }) => (
-    <aside className="debug-panel" aria-label="协议调试"><div className="debug-heading"><div><p className="eyebrow">SYSTEM · DEBUG</p><strong>协议调试</strong></div><button onClick={onClose} type="button">关闭</button></div><div className="debug-log">{entries.length === 0 ? <p>暂无协议事件。</p> : entries.map((entry) => <div key={entry.id}><time>{entry.time}</time><span>{entry.message}</span></div>)}</div></aside>
+    <aside className="debug-panel" aria-label="协议调试"><div className="debug-heading"><div><strong>协议调试</strong></div><button onClick={onClose} type="button">关闭</button></div><div className="debug-log">{entries.length === 0 ? <p>暂无协议事件。</p> : entries.map((entry) => <div key={entry.id}><time>{entry.time}</time><span>{entry.message}</span></div>)}</div></aside>
 );
 
 export const App = () => {
@@ -151,17 +150,17 @@ export const App = () => {
     if (activeView === 'map') {
         page = <MapView />;
     } else if (activeView === 'help') {
-        page = <HelpView onOpenSettings={() => setShowDebug(true)} />;
+        page = <HelpView />;
     } else if (activeView === 'inventory') {
-        page = <main className="page-main"><div className="page-surface"><PageHeading description="收纳一路所得，随时查看可用物品。" eyebrow="CHAR · INVENTORY" icon="bag" title={inventoryTab === 'inventory' ? '行囊' : '装备'} action={<span className="count-label">{inventoryTab === 'inventory' ? client.inventory.length + ' 件物品' : client.equipment.filter((slot) => Boolean(slot.item_id)).length + ' 格已用'}</span>} /><div className="mobile-secondary-tabs" role="tablist" aria-label="行囊与装备"><button aria-selected={inventoryTab === 'inventory'} className={inventoryTab === 'inventory' ? 'active' : ''} onClick={() => setInventoryTab('inventory')} role="tab" type="button">行囊</button><button aria-selected={inventoryTab === 'equipment'} className={inventoryTab === 'equipment' ? 'active' : ''} onClick={() => setInventoryTab('equipment')} role="tab" type="button">装备</button></div>{inventoryTab === 'inventory' ? <InventoryPanel connected={connected} items={client.inventory} onAction={client.sendItemAction} /> : <EquipmentPanel connected={connected} onAction={client.sendItemAction} slotOrder={client.equipmentSlotOrder} slots={client.equipment} />}</div></main>;
+        page = <main className="page-main"><div className="page-surface"><PageHeading description="查看物品与装备。" icon="bag" title={inventoryTab === 'inventory' ? '行囊' : '装备'} action={<span className="count-label">{inventoryTab === 'inventory' ? client.inventory.length + ' 件物品' : client.equipment.filter((slot) => Boolean(slot.item_id)).length + ' 格已用'}</span>} /><div className="mobile-secondary-tabs" role="tablist" aria-label="行囊与装备"><button aria-selected={inventoryTab === 'inventory'} className={inventoryTab === 'inventory' ? 'active' : ''} onClick={() => setInventoryTab('inventory')} role="tab" type="button">行囊</button><button aria-selected={inventoryTab === 'equipment'} className={inventoryTab === 'equipment' ? 'active' : ''} onClick={() => setInventoryTab('equipment')} role="tab" type="button">装备</button></div>{inventoryTab === 'inventory' ? <InventoryPanel connected={connected} embedded items={client.inventory} onAction={client.sendItemAction} /> : <EquipmentPanel connected={connected} embedded onAction={client.sendItemAction} slotOrder={client.equipmentSlotOrder} slots={client.equipment} />}</div></main>;
     } else if (activeView === 'equipment') {
-        page = <main className="page-main"><div className="page-surface"><PageHeading description="整理你的兵器与护具，保持最佳状态。" eyebrow="CHAR · EQUIPMENT" icon="armor" title="装备" action={<span className="count-label">{client.equipment.filter((slot) => Boolean(slot.item_id)).length} 格已用</span>} /><EquipmentPanel connected={connected} onAction={client.sendItemAction} slotOrder={client.equipmentSlotOrder} slots={client.equipment} /></div></main>;
+        page = <main className="page-main"><div className="page-surface"><PageHeading description="查看已装备物品。" icon="armor" title="装备" action={<span className="count-label">{client.equipment.filter((slot) => Boolean(slot.item_id)).length} 格已用</span>} /><EquipmentPanel connected={connected} embedded onAction={client.sendItemAction} slotOrder={client.equipmentSlotOrder} slots={client.equipment} /></div></main>;
     } else if (activeView === 'skills') {
-        page = <main className="page-main"><div className="page-surface"><PageHeading description="参悟招式，调整当前启用与准备的武学。" eyebrow="MARTIAL · SKILLS" icon="book" title="武学" action={<span className="count-label">{client.skills.length} 门武学</span>} /><SkillsPanel connected={connected} disabled={!connected || client.status?.can_act === false} onAction={client.sendSkillAction} skills={client.skills} status={client.status} /></div></main>;
+        page = <main className="page-main"><div className="page-surface"><PageHeading description="管理当前启用与准备的武学。" icon="book" title="武学" action={<span className="count-label">{client.skills.length} 门武学</span>} /><SkillsPanel connected={connected} disabled={!connected || client.status?.can_act === false} onAction={client.sendSkillAction} skills={client.skills} status={client.status} /></div></main>;
     } else if (activeView === 'quests') {
-        page = <main className="page-main"><div className="page-surface"><PageHeading description="记下每一段因缘，也别错过江湖的召唤。" eyebrow="JOURNAL · QUESTS" icon="quest" title="任务志" action={<span className="count-label">{client.quests?.quests.length ?? 0} 项当前</span>} /><QuestPanel connected={connected} snapshot={client.quests} /></div></main>;
+        page = <main className="page-main"><div className="page-surface"><PageHeading description="查看任务状态与进度。" icon="quest" title="任务" action={<span className="count-label">{client.quests?.quests.length ?? 0} 项当前</span>} /><QuestPanel connected={connected} embedded snapshot={client.quests} /></div></main>;
     } else {
-        page = <main className="page-main"><div className="page-surface chat-page-surface"><PageHeading description="听见江湖，也让你的声音被人听见。" eyebrow="RIVERS · CHAT" icon="message" title="江湖消息" action={<span className="count-label">{client.chatMessages.length} 条消息</span>} /><ChatPanel capabilities={client.chatCapabilities} connected={connected} messages={client.chatMessages} onSend={client.sendChat} targets={client.chatTargets} /></div></main>;
+        page = <main className="page-main"><div className="page-surface chat-page-surface"><PageHeading description="查看消息并参与交流。" icon="message" title="消息" action={<span className="count-label">{client.chatMessages.length} 条消息</span>} /><ChatPanel capabilities={client.chatCapabilities} connected={connected} embedded messages={client.chatMessages} onSend={client.sendChat} targets={client.chatTargets} /></div></main>;
     }
 
     const roomTitle = client.room?.name || (connected ? '当前房间' : '尚未连接江湖');
@@ -171,7 +170,7 @@ export const App = () => {
         <div className={'game-shell ' + (activeView === 'jianghu' ? 'is-game-view' : 'is-page-view')}>
             <header className="game-header">
                 <button className="brand" onClick={() => navigate('jianghu')} type="button"><span className="brand-mark">炎黄</span><span className="brand-seal">江湖</span></button>
-                <nav className="top-nav" aria-label="全局导航"><button className={activeView === 'jianghu' ? 'active' : ''} onClick={() => navigate('jianghu')} type="button"><Icon name="home" size={17} />游戏</button><button className={activeView === 'map' ? 'active' : ''} onClick={() => navigate('map')} type="button"><Icon name="map" size={17} />地图</button><button className={activeView === 'help' ? 'active' : ''} onClick={() => navigate('help')} type="button"><Icon name="help" size={17} />帮助</button></nav>
+                <nav className="top-nav" aria-label="全局导航"><button className={activeView === 'jianghu' ? 'active' : ''} onClick={() => navigate('jianghu')} type="button"><Icon name="home" size={17} />江湖</button><button className={activeView === 'map' ? 'active' : ''} onClick={() => navigate('map')} type="button"><Icon name="map" size={17} />地图</button><button className={activeView === 'help' ? 'active' : ''} onClick={() => navigate('help')} type="button"><Icon name="help" size={17} />帮助</button></nav>
                 <div className="header-actions"><div className={'connection-state ' + client.connectionState} title={client.connectionDetail || stateLabels[client.connectionState]}><span /><strong>{stateLabels[client.connectionState]}</strong>{client.connectionDetail && <em>{client.connectionDetail}</em>}</div><button aria-label="打开协议调试" className="settings-button" onClick={() => setShowDebug((current) => !current)} title="协议调试" type="button"><Icon name="settings" size={21} /></button></div>
             </header>
 
@@ -179,7 +178,7 @@ export const App = () => {
 
             {activeView === 'jianghu' ? <main className="game-main">
                 <aside className="left-rail"><PlayerCard connected={connected} status={client.status} vitals={client.vitals} /><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /><div className="rail-tip"><Icon name="spark" size={17} /><span>所有状态会随服务器快照实时更新</span></div></aside>
-                <section className="center-stage"><div className="scene-panel surface-card"><div className="scene-topline"><span><Icon name="mountain" size={16} />{roomArea}</span><span className="scene-status"><i />{connected ? '实时同步' : '等待连接'}</span></div><div className="scene-title-row"><div><p className="eyebrow">CURRENT ROOM · 当前位置</p><h1>{roomTitle}</h1></div></div>{!client.room && <div className="scene-empty-state"><Icon name="mountain" size={20} /><span>{connected ? '当前没有房间信息' : '连接江湖后显示房间、出口与周围人物'}</span></div>}<Terminal connected={connected} segments={client.segments} /><CommandBar connected={connected} onSend={client.sendCommand} serverSensitive={client.serverSensitive} /></div></section>
+                <section className="center-stage"><div className="scene-panel surface-card"><div className="scene-topline"><span><Icon name="mountain" size={16} />{roomArea}</span><span className="scene-status"><i />{connected ? '实时同步' : '等待连接'}</span></div><div className="scene-title-row"><h1>{roomTitle}</h1></div>{!client.room && <div className="scene-empty-state"><Icon name="mountain" size={20} /><span>{connected ? '当前没有房间信息' : '连接江湖后显示房间、出口与周围人物'}</span></div>}<Terminal connected={connected} segments={client.segments} /><CommandBar connected={connected} onSend={client.sendCommand} serverSensitive={client.serverSensitive} /></div></section>
                 <aside className="right-rail"><RoomPanel connected={connected} disabled={!connected} onMove={client.sendCommand} room={client.room} /><RoomEntities connected={connected} disabled={!connected} entities={client.entities} inventory={client.inventory} onAction={client.sendEntityAction} onGive={client.sendEntityGive} /></aside>
                 <section className="mobile-combat"><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /></section>
             </main> : page}

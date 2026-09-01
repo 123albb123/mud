@@ -9,6 +9,7 @@ import type {
 interface ChatPanelProps {
     capabilities: ChatCapabilities | null;
     connected: boolean;
+    embedded?: boolean;
     targets: ChatTarget[];
     messages: ChatMessage[];
     onSend: (
@@ -28,7 +29,7 @@ const kindLabels: Record<ChatKind, string> = {
 const channelName = (capabilities: ChatCapabilities | null, channelId: string): string =>
     capabilities?.channels.find((channel) => channel.id === channelId)?.name ?? channelId;
 
-export const ChatPanel = ({ capabilities, connected, targets, messages, onSend }: ChatPanelProps) => {
+export const ChatPanel = ({ capabilities, connected, embedded = false, targets, messages, onSend }: ChatPanelProps) => {
     const writableChannels = useMemo(
         () => (capabilities?.channels ?? []).filter((channel) => channel.can_send),
         [capabilities],
@@ -100,14 +101,13 @@ export const ChatPanel = ({ capabilities, connected, targets, messages, onSend }
     };
 
     return (
-        <section className="feature-panel chat-panel" aria-labelledby="chat-title">
-            <div className="feature-panel-heading">
+        <section aria-label={embedded ? '消息内容' : undefined} aria-labelledby={embedded ? undefined : 'chat-title'} className="feature-panel chat-panel">
+            {!embedded && <div className="feature-panel-heading">
                 <div>
-                    <p className="eyebrow">CHAT · MESSAGE</p>
-                    <h2 id="chat-title">江湖消息</h2>
+                    <h2 id="chat-title">消息</h2>
                 </div>
                 <span className="feature-count">{messages.length} 条</span>
-            </div>
+            </div>}
             <div
                 aria-live="polite"
                 className="chat-feed"
@@ -173,7 +173,7 @@ export const ChatPanel = ({ capabilities, connected, targets, messages, onSend }
                             aria-label="搜索私聊对象"
                             id="chat-target-search"
                             onChange={(event) => setTargetSearch(event.target.value)}
-                            placeholder="按姓名或 player_id 搜索"
+                            placeholder="搜索姓名或账号"
                             spellCheck={false}
                             value={targetSearch}
                         />

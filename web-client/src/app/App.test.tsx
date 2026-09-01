@@ -178,4 +178,50 @@ describe('App', () => {
         expect(document.querySelector('.dock-quests .nav-badge')).toHaveTextContent('1');
         expect(document.querySelector('.dock-chat .nav-badge')).toHaveTextContent('1');
     });
+
+    it('keeps page titles singular and removes decorative English eyebrows', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient());
+        render(<App />);
+
+        expect([...document.querySelectorAll('.top-nav button')].map((button) => button.textContent?.trim())).toEqual(['江湖', '地图', '帮助']);
+        expect(screen.getByRole('heading', { name: '人物状态', level: 2 })).toBeInTheDocument();
+        expect(screen.queryByText('人物状态 · CHARACTER')).not.toBeInTheDocument();
+        expect(screen.queryByText('CURRENT ROOM · 当前位置')).not.toBeInTheDocument();
+
+        const expectPageTitle = (title: string) => {
+            expect(screen.getAllByRole('heading', { level: 1, name: title })).toHaveLength(1);
+            expect(screen.queryByRole('heading', { level: 2, name: title })).not.toBeInTheDocument();
+        };
+
+        fireEvent.click(screen.getByRole('button', { name: /^行囊$/ }));
+        expectPageTitle('行囊');
+        expect(screen.queryByText('CHAR · INVENTORY')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('tab', { name: /^装备$/ }));
+        expectPageTitle('装备');
+        expect(screen.queryByText('CHAR · EQUIPMENT')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^武学$/ }));
+        expectPageTitle('武学');
+        expect(screen.queryByText('MARTIAL · SKILLS')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^任务$/ }));
+        expectPageTitle('任务');
+        expect(screen.queryByText('任务志')).not.toBeInTheDocument();
+        expect(screen.queryByText('JOURNAL · QUESTS')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^消息$/ }));
+        expectPageTitle('消息');
+        expect(screen.queryByRole('heading', { name: '江湖消息' })).not.toBeInTheDocument();
+        expect(screen.queryByText('RIVERS · CHAT')).not.toBeInTheDocument();
+        expect(screen.queryByText('CHAT · MESSAGE')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        expectPageTitle('地图');
+        expect(screen.queryByText('WORLD · MAP')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^帮助$/ }));
+        expectPageTitle('帮助');
+        expect(screen.queryByText('GUIDE · HELP')).not.toBeInTheDocument();
+    });
 });

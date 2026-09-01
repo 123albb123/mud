@@ -542,7 +542,7 @@ select:focus-visible {
 }
 
 .player-identity h2 {
-    margin: 2px 0 3px;
+    margin: 0 0 3px;
     overflow: hidden;
     color: var(--gold-bright);
     font-family: var(--font-title);
@@ -1415,8 +1415,8 @@ select:focus-visible {
     align-items: flex-start;
     gap: 15px;
     max-width: 1080px;
-    margin: 0 auto 24px;
-    padding-bottom: 19px;
+    margin: 0 auto 18px;
+    padding-bottom: 15px;
     border-bottom: 1px solid rgba(171, 129, 70, 0.24);
 }
 
@@ -1433,7 +1433,7 @@ select:focus-visible {
 }
 
 .page-heading h1 {
-    margin: 3px 0 4px;
+    margin: 0 0 4px;
     color: var(--gold-bright);
     font-family: var(--font-title);
     font-size: 31px;
@@ -1452,7 +1452,7 @@ select:focus-visible {
     align-items: center;
     gap: 7px;
     margin-left: auto;
-    padding-top: 11px;
+    padding-top: 6px;
     white-space: nowrap;
 }
 
@@ -2722,8 +2722,8 @@ kbd,
 
     .page-heading {
         gap: 10px;
-        margin-bottom: 18px;
-        padding-bottom: 15px;
+        margin-bottom: 13px;
+        padding-bottom: 11px;
     }
 
     .page-heading-icon {
@@ -2732,7 +2732,7 @@ kbd,
     }
 
     .page-heading h1 {
-        margin-top: 1px;
+        margin-top: 0;
         font-size: 27px;
     }
 
@@ -2744,7 +2744,7 @@ kbd,
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px;
-        margin: -3px 0 17px;
+        margin: -2px 0 13px;
         padding: 4px;
         border: 1px solid rgba(164, 124, 69, 0.24);
         border-radius: 7px;
@@ -2768,7 +2768,7 @@ kbd,
     }
 
     .page-heading-action {
-        padding-top: 7px;
+        padding-top: 4px;
     }
 
     .count-label {

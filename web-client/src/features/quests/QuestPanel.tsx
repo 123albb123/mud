@@ -3,6 +3,7 @@ import type { QuestListSnapshot, QuestRecord } from '../../protocol/gmcp/gmcp';
 
 interface QuestPanelProps {
     connected?: boolean;
+    embedded?: boolean;
     snapshot: QuestListSnapshot | null;
 }
 
@@ -81,30 +82,28 @@ const QuestGroup = ({ title, records }: { title: string; records: QuestRecord[] 
     </section>
 );
 
-export const QuestPanel = ({ connected = true, snapshot }: QuestPanelProps) => {
+export const QuestPanel = ({ connected = true, embedded = false, snapshot }: QuestPanelProps) => {
     if (!snapshot) {
         return (
-            <section className="feature-panel quest-panel" aria-labelledby="quest-title">
-                <div className="feature-panel-heading">
+            <section aria-label={embedded ? '任务内容' : undefined} aria-labelledby={embedded ? undefined : 'quest-title'} className="feature-panel quest-panel">
+                {!embedded && <div className="feature-panel-heading">
                     <div>
-                        <p className="eyebrow">QUEST · LIST</p>
-                        <h2 id="quest-title">任务志</h2>
+                        <h2 id="quest-title">任务</h2>
                     </div>
-                </div>
+                </div>}
                 <p className="feature-empty-state">{connected ? '当前没有任务' : '连接江湖后查看任务'}</p>
             </section>
         );
     }
 
     return (
-        <section className="feature-panel quest-panel" aria-labelledby="quest-title">
-            <div className="feature-panel-heading">
+        <section aria-label={embedded ? '任务内容' : undefined} aria-labelledby={embedded ? undefined : 'quest-title'} className="feature-panel quest-panel">
+            {!embedded && <div className="feature-panel-heading">
                 <div>
-                    <p className="eyebrow">QUEST · LIST</p>
-                    <h2 id="quest-title">任务志</h2>
+                    <h2 id="quest-title">任务</h2>
                 </div>
                 <span className="feature-count">{snapshot.quests.length} 项当前</span>
-            </div>
+            </div>}
             <div className="quest-stats">
                 {snapshot.stats.traditional_completed !== undefined && (
                     <span>师门完成 {snapshot.stats.traditional_completed}</span>
