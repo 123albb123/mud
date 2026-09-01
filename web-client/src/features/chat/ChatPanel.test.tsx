@@ -76,4 +76,32 @@ describe('ChatPanel', () => {
         );
         expect(feed.scrollTop).toBe(800);
     });
+
+    it('keeps same-sender tell messages as separate feed entries', () => {
+        const onSend = vi.fn();
+        const firstTell: ChatMessage = {
+            ...messages[0],
+            kind: 'tell',
+            message_id: 'm-tell-1',
+            text: '第一条',
+        };
+        const secondTell: ChatMessage = {
+            ...messages[0],
+            kind: 'reply',
+            message_id: 'm-tell-2',
+            text: '第二条',
+        };
+        render(
+            <ChatPanel
+                capabilities={capabilities}
+                connected
+                targets={targets}
+                messages={[firstTell, secondTell]}
+                onSend={onSend}
+            />,
+        );
+        expect(screen.getByText('第一条')).toBeInTheDocument();
+        expect(screen.getByText('第二条')).toBeInTheDocument();
+        expect(document.querySelectorAll('.chat-message')).toHaveLength(2);
+    });
 });

@@ -8,6 +8,8 @@ int help(object me);
 
 private void deliver_web_private_metadata(object me, mixed info)
 {
+    mixed *events;
+    mixed event;
     mapping metadata;
     string kind;
     string sender_name;
@@ -15,18 +17,31 @@ private void deliver_web_private_metadata(object me, mixed info)
     string text;
 
     if (!objectp(me) || !arrayp(info) || sizeof(info) < 4 ||
-        !mapp(info[3]))
+        (!arrayp(info[3]) && !mapp(info[3])))
         return;
-    metadata = info[3];
-    kind = metadata["kind"];
-    sender_name = metadata["sender_name"];
-    sender_id = metadata["sender_id"];
-    text = metadata["text"];
-    if ((kind != "tell" && kind != "reply") ||
-        !stringp(sender_name) || !stringp(sender_id) || !stringp(text) ||
-        !function_exists("gmcp_chat_private_delivered", me))
-        return;
-    catch(me->gmcp_chat_private_delivered(kind, sender_name, sender_id, text));
+
+    if (arrayp(info[3]))
+        events = info[3];
+    else
+        events = ({info[3]});
+
+    foreach (event in events)
+    {
+        if (!mapp(event))
+            continue;
+        metadata = event;
+        kind = metadata["kind"];
+        sender_name = metadata["sender_name"];
+        sender_id = metadata["sender_id"];
+        text = metadata["text"];
+        if ((kind != "tell" && kind != "reply") ||
+            !stringp(sender_name) || !stringp(sender_id) ||
+            !stringp(text) ||
+            !function_exists("gmcp_chat_private_delivered", me))
+            continue;
+        catch(me->gmcp_chat_private_delivered(kind, sender_name,
+                                              sender_id, text));
+    }
 }
 
 int main(object me, string arg)

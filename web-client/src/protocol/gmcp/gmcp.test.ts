@@ -456,6 +456,19 @@ describe('GMCP codec', () => {
             sequence: 5,
             players: [{ player_id: 'p-session-0001/path', name: '坏目标' }],
         })?.players).toEqual([]);
+        const manyTargets = Array.from({ length: 301 }, (_, index) => ({
+            player_id: `p-session-${index + 1}`,
+            name: `在线侠客${index + 1}`,
+        }));
+        const cappedTargets = toChatTargetsSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 6,
+            sequence: 6,
+            players: manyTargets,
+        });
+        expect(cappedTargets?.players).toHaveLength(300);
+        expect(cappedTargets?.players.at(-1)?.player_id).toBe('p-session-300');
     });
 
     it('builds only fixed, newline-free chat send requests', () => {

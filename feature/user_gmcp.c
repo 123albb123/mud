@@ -8,6 +8,7 @@
 #define GMCP_QUEST_POLL_INTERVAL 4
 #define GMCP_CHAT_POLL_INTERVAL 4
 #define GMCP_CHAT_TARGET_POLL_INTERVAL 10
+#define GMCP_CHAT_TARGET_LIMIT 300
 #define GMCP_CHAT_TEXT_LIMIT 2048
 #define GMCP_CHAT_TARGETS_VERSION 1
 #define GMCP_ACTION_D "/adm/daemons/gmcp_actiond"
@@ -1557,6 +1558,7 @@ private mapping gmcp_chat_targets_snapshot()
     mixed *players;
     mapping active;
     mapping record;
+    mapping target_keys;
     string *keys_to_check;
     string key;
     int i;
@@ -1564,14 +1566,27 @@ private mapping gmcp_chat_targets_snapshot()
     online = all_interactive();
     players = ({});
     active = ([]);
+    target_keys = ([]);
     for (i = 0; i < sizeof(online); i++)
     {
         record = gmcp_chat_target_record(online[i]);
         if (!mapp(record))
             continue;
         key = file_name(online[i]);
-        active[key] = 1;
+        target_keys[record["player_id"]] = key;
         players += ({record});
+    }
+
+    players = sort_array(players,
+                         (: strcmp($1["player_id"], $2["player_id"]) :));
+    if (sizeof(players) > GMCP_CHAT_TARGET_LIMIT)
+        players = players[0..GMCP_CHAT_TARGET_LIMIT - 1];
+
+    for (i = 0; i < sizeof(players); i++)
+    {
+        key = target_keys[players[i]["player_id"]];
+        if (stringp(key) && key != "")
+            active[key] = 1;
     }
 
     if (mapp(gmcp_chat_target_ids))
@@ -1585,8 +1600,6 @@ private mapping gmcp_chat_targets_snapshot()
         }
     }
 
-    players = sort_array(players,
-                         (: strcmp($1["player_id"], $2["player_id"]) :));
     return ([
         "version" : GMCP_CHAT_TARGETS_VERSION,
         "snapshot": 1,

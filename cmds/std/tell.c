@@ -171,7 +171,7 @@ varargs int notice_user(string my_name, string my_id, object obj,
         // 阻塞式交谈
         info = ({my_name, my_id, tell_out});
         if (mapp(web_info))
-            info += ({web_info});
+            info += ({({web_info})});
         list = obj->query_temp("tell_list");
         if (!arrayp(list) || sizeof(list) < 1)
         {
@@ -222,9 +222,13 @@ varargs int notice_user(string my_name, string my_id, object obj,
 
                     // 记录这次交谈的信息
                     piece[2] += tell_out;
-                    if (mapp(web_info) && sizeof(piece) >= 4 &&
-                        mapp(piece[3]) && stringp(piece[3]["text"]))
-                        piece[3]["text"] += plain_text;
+                    if (mapp(web_info) && sizeof(piece) >= 4)
+                    {
+                        if (arrayp(piece[3]))
+                            piece[3] += ({web_info});
+                        else if (mapp(piece[3]))
+                            piece[3] = ({piece[3], web_info});
+                    }
                     info = 0;
                 }
             }
