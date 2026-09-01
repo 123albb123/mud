@@ -60,11 +60,11 @@ const MapExitButton = ({
     exit: RoomMapExit;
     onMove: (exitId: string) => void;
 }) => {
-    const canMove = connected && exit.resolved && !exit.dynamic && !exit.conditional;
+    const canMove = connected && !exit.dynamic;
     const description = exit.destination_name || (exit.dynamic ? '特殊通路' : '尚未探索');
     return (
         <button
-            className={'map-exit-button ' + (canMove ? 'is-known' : 'is-unknown')}
+            className={'map-exit-button ' + (exit.resolved ? 'is-known' : 'is-unknown')}
             data-exit-id={exit.exit_id}
             disabled={!canMove}
             onClick={() => onMove(exit.exit_id)}

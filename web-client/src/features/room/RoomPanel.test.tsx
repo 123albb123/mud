@@ -18,7 +18,17 @@ describe('RoomPanel', () => {
     it('disables directions absent from exits', () => {
         render(<RoomPanel room={roomFixture} roomMap={roomMapFixture} disabled={false} onMove={() => undefined} />);
         expect(screen.getByRole('button', { name: '南' })).toBeDisabled();
-        expect(screen.getByRole('button', { name: '上' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '上' })).not.toBeDisabled();
+    });
+
+    it('allows unresolved and conditional exits to reach the server action', () => {
+        const onMove = vi.fn();
+        render(<RoomPanel room={roomFixture} roomMap={roomMapFixture} disabled={false} onMove={onMove} />);
+
+        fireEvent.click(screen.getByRole('button', { name: '西' }));
+        fireEvent.click(screen.getByRole('button', { name: '上' }));
+        expect(onMove).toHaveBeenNthCalledWith(1, 'x-test-0006');
+        expect(onMove).toHaveBeenNthCalledWith(2, 'x-test-0003');
     });
 
     it('does not fall back to Room.Info commands before a map snapshot arrives', () => {

@@ -44,7 +44,7 @@ export const RoomPanel = ({ connected = true, room, roomMap, disabled, onMove }:
     const roomName = roomMap?.room.name || room?.name || (connected ? '当前房间' : '尚未连接江湖');
     const roomArea = roomMap?.room.area || room?.area || (connected ? '当前区域未知' : '连接江湖后显示房间区域');
     const isMoveAvailable = (exit: RoomMapExit | undefined) => Boolean(
-        exit && connected && !disabled && exit.resolved && !exit.dynamic && !exit.conditional,
+        exit && connected && !disabled && !exit.dynamic,
     );
 
     return (

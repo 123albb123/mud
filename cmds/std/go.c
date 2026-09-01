@@ -43,6 +43,14 @@ int main(object me, string arg)
     if (!arg)
         return notify_fail("你要往哪个方向走？\n");
 
+    // GMCP invokes this command object directly, outside the driver's
+    // command-giver context.  Keep the direct go.main(me, direction) entry
+    // point, but let the player establish the normal context before legacy
+    // valid_leave() implementations inspect this_player().
+    if (!objectp(this_player()) && objectp(me) &&
+        function_exists("gmcp_run_go_with_context", me))
+        return (int)me->gmcp_run_go_with_context(arg);
+
     if (me->over_encumbranced())
         return notify_fail("你的负荷过重，动弹不得。\n");
 

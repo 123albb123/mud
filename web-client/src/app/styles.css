@@ -2319,6 +2319,13 @@ select:focus-visible {
     box-shadow: 0 0 16px rgba(65, 178, 169, 0.12);
 }
 
+.map-exit-button.is-unknown:not(:disabled):hover {
+    border-color: rgba(71, 171, 174, 0.78);
+    color: #d9eee2;
+    background: rgba(20, 58, 56, 0.82);
+    box-shadow: 0 0 13px rgba(65, 178, 169, 0.1);
+}
+
 .map-exit-button.is-unknown {
     border-style: dashed;
     border-color: rgba(133, 113, 80, 0.34);
