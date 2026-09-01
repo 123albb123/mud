@@ -12,6 +12,13 @@ mapping valid_types =
     "unarmed":  "拳脚",
 ]);
 
+// Read-only capability source for structured clients. Returning the command's
+// own mapping keeps Web metadata aligned with the text command.
+mapping query_valid_types()
+{
+    return valid_types;
+}
+
 int main(object me, string arg)
 {
     mapping smap, pmap;

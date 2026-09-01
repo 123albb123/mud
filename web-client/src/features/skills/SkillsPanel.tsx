@@ -50,7 +50,7 @@ const SkillList = ({ disabled, onAction, selections, setSelection, skills }: Ski
                             >启用</button>
                         </div>
                     )}
-                    {!skill.is_basic && (
+                    {skill.prepare_slots.length > 0 && (
                         <button
                             className="prepare-action"
                             disabled={disabled}

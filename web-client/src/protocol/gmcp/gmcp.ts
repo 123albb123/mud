@@ -84,6 +84,8 @@ export interface CharacterSkill {
     is_basic: boolean;
     enabled_for: string[];
     prepared_for: string[];
+    /** Basic slots the server says this skill can currently be prepared for. */
+    prepare_slots: string[];
     enable_slots: string[];
 }
 
@@ -96,12 +98,16 @@ export interface SkillsSnapshot {
 }
 
 export type CombatActionKind = 'fight' | 'kill' | 'perform' | 'exert';
+export type CombatTargetMode = 'none' | 'optional' | 'required';
+export type CombatTargetType = 'npc' | 'player';
 
 export interface CombatAction {
     action_id: string;
     label: string;
     kind: CombatActionKind;
     requires_target: boolean;
+    target_mode?: CombatTargetMode;
+    target_types?: CombatTargetType[];
 }
 
 export interface CombatActionsSnapshot {
@@ -222,6 +228,30 @@ const itemIdPattern = /^i-[A-Za-z0-9]+-[0-9]+$/;
 const entityIdPattern = /^e-[A-Za-z0-9]+-[0-9]+$/;
 const skillIdPattern = /^[a-z0-9_-]{1,64}$/;
 const combatActionIdPattern = /^(fight|kill|perform:[a-z0-9_-]{1,64}:[a-z0-9_-]{1,64}|exert:force:[a-z0-9_-]{1,64})$/;
+const noTargetExertNames = new Set([
+    'power', 'powerup', 'recover', 'regenerate', 'heal', 'inspire', 'roar',
+    'tianmo', 'shield', 'resurrect', 'xun',
+]);
+const requiredTargetExertNames = new Set(['lifeheal', 'shot']);
+
+const inferredCombatTargetMode = (actionId: string): CombatTargetMode => {
+    if (typeof actionId !== 'string') {
+        return 'optional';
+    }
+    if (actionId === 'fight' || actionId === 'kill') {
+        return 'required';
+    }
+    const parts = actionId.split(':');
+    if (parts[0] === 'exert' && parts[1] === 'force') {
+        if (noTargetExertNames.has(parts[2])) {
+            return 'none';
+        }
+        if (requiredTargetExertNames.has(parts[2])) {
+            return 'required';
+        }
+    }
+    return 'optional';
+};
 
 export interface WebItemActionRequest {
     item_id: string;
@@ -312,6 +342,7 @@ export interface WebCombatActionRequest {
 export const toWebCombatActionRequest = (
     actionId: string,
     targetEntityId?: string,
+    targetMode?: CombatTargetMode,
 ): WebCombatActionRequest | null => {
     if (!combatActionIdPattern.test(actionId)) {
         return null;
@@ -319,8 +350,18 @@ export const toWebCombatActionRequest = (
     if (targetEntityId !== undefined && !entityIdPattern.test(targetEntityId)) {
         return null;
     }
-    const requiresTarget = actionId === 'fight' || actionId === 'kill';
-    if (requiresTarget !== (targetEntityId !== undefined)) {
+    const inferredMode = inferredCombatTargetMode(actionId);
+    const mode = targetMode ?? inferredMode;
+    if (mode !== 'none' && mode !== 'optional' && mode !== 'required') {
+        return null;
+    }
+    if (mode === 'required' && targetEntityId === undefined) {
+        return null;
+    }
+    if (mode === 'none' && targetEntityId !== undefined) {
+        return null;
+    }
+    if ((actionId === 'fight' || actionId === 'kill') && mode !== 'required') {
         return null;
     }
     return targetEntityId === undefined
@@ -583,7 +624,9 @@ const parseCharacterSkill = (value: unknown): CharacterSkill | null => {
     const progress = finiteNumber(data.progress);
     if (typeof data.skill_id !== 'string' || !skillIdPattern.test(data.skill_id) || !name || !type ||
         level === undefined || progress === undefined || !Array.isArray(data.enabled_for) ||
-        !Array.isArray(data.prepared_for) || !Array.isArray(data.enable_slots) ||
+        !Array.isArray(data.prepared_for) ||
+        (data.prepare_slots !== undefined && !Array.isArray(data.prepare_slots)) ||
+        !Array.isArray(data.enable_slots) ||
         booleanFlag(data.is_basic) === undefined) {
         return null;
     }
@@ -596,6 +639,8 @@ const parseCharacterSkill = (value: unknown): CharacterSkill | null => {
         is_basic: booleanFlag(data.is_basic) as boolean,
         enabled_for: data.enabled_for.filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
         prepared_for: data.prepared_for.filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
+        prepare_slots: (Array.isArray(data.prepare_slots) ? data.prepare_slots : [])
+            .filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
         enable_slots: data.enable_slots.filter((slot): slot is string => typeof slot === 'string' && skillIdPattern.test(slot)),
     };
 };
@@ -623,6 +668,8 @@ export const toSkillsSnapshot = (payload: unknown): SkillsSnapshot | null => {
 };
 
 const combatActionKinds = new Set<CombatActionKind>(['fight', 'kill', 'perform', 'exert']);
+const combatTargetModes = new Set<CombatTargetMode>(['none', 'optional', 'required']);
+const combatTargetTypes = new Set<CombatTargetType>(['npc', 'player']);
 
 const parseCombatAction = (value: unknown): CombatAction | null => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -631,9 +678,22 @@ const parseCombatAction = (value: unknown): CombatAction | null => {
     const data = value as Record<string, unknown>;
     const label = safeProtocolText(data.label);
     const requiresTarget = booleanFlag(data.requires_target);
+    const targetMode = data.target_mode === undefined
+        ? (requiresTarget ? 'required' : inferredCombatTargetMode(data.action_id as string))
+        : data.target_mode;
+    const targetTypes = data.target_types === undefined
+        ? []
+        : data.target_types;
     if (typeof data.action_id !== 'string' || !combatActionIdPattern.test(data.action_id) || !label ||
         typeof data.kind !== 'string' || !combatActionKinds.has(data.kind as CombatActionKind) ||
-        requiresTarget === undefined) {
+        requiresTarget === undefined || typeof targetMode !== 'string' ||
+        !combatTargetModes.has(targetMode as CombatTargetMode) ||
+        (targetMode === 'required') !== requiresTarget ||
+        ((data.kind === 'fight' || data.kind === 'kill') && targetMode !== 'required') ||
+        !Array.isArray(targetTypes) ||
+        targetTypes.some((targetType) => typeof targetType !== 'string' ||
+            !combatTargetTypes.has(targetType as CombatTargetType)) ||
+        (targetMode === 'none' && targetTypes.length > 0)) {
         return null;
     }
     return {
@@ -641,6 +701,8 @@ const parseCombatAction = (value: unknown): CombatAction | null => {
         label,
         kind: data.kind as CombatActionKind,
         requires_target: requiresTarget,
+        target_mode: targetMode as CombatTargetMode,
+        target_types: targetTypes as CombatTargetType[],
     };
 };
 

@@ -20,6 +20,7 @@ import {
     toRoomInfo,
     toSkillsSnapshot,
     type CharacterStatus,
+    type CombatTargetMode,
     type CharacterSkill,
     type CombatAction,
     type CombatStateSnapshot,
@@ -325,9 +326,13 @@ export const useMudClient = () => {
         parser.sendGMCP('Web.Skill.Action', request);
     }, []);
 
-    const sendCombatAction = useCallback((actionId: string, targetEntityId?: string) => {
+    const sendCombatAction = useCallback((
+        actionId: string,
+        targetEntityId?: string,
+        targetMode?: CombatTargetMode,
+    ) => {
         const parser = parserRef.current;
-        const request = toWebCombatActionRequest(actionId, targetEntityId);
+        const request = toWebCombatActionRequest(actionId, targetEntityId, targetMode);
         if (!parser || !request) {
             return;
         }

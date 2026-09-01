@@ -261,7 +261,7 @@ describe('GMCP codec', () => {
             version: 1, snapshot: true, revision: 2, sequence: 2,
             skills: [{
                 skill_id: 'taiji-sword', name: '太极剑法', level: 120, progress: 36,
-                type: 'martial', is_basic: 0, enabled_for: ['sword'], prepared_for: [], enable_slots: ['sword'],
+                type: 'martial', is_basic: 0, enabled_for: ['sword'], prepared_for: [], prepare_slots: ['unarmed'], enable_slots: ['sword'],
             }, {
                 skill_id: 'bad\nname', name: '坏', level: 1, progress: 0,
                 type: 'martial', is_basic: 0, enabled_for: [], prepared_for: [], enable_slots: [],
@@ -269,16 +269,30 @@ describe('GMCP codec', () => {
         });
         expect(skills?.skills).toHaveLength(1);
         expect(skills?.skills[0].is_basic).toBe(false);
+        expect(skills?.skills[0].prepare_slots).toEqual(['unarmed']);
 
         const actions = toCombatActionsSnapshot({
             version: 1, snapshot: 1, revision: 3, sequence: 3,
             actions: [
                 { action_id: 'fight', label: '切磋', kind: 'fight', requires_target: 1 },
                 { action_id: 'perform:sword:chan', label: '太极剑·缠', kind: 'perform', requires_target: 0 },
+                { action_id: 'exert:force:recover', label: '恢复', kind: 'exert', requires_target: 0 },
                 { action_id: 'perform:/tmp:bad', label: '坏', kind: 'perform', requires_target: 0 },
             ],
         });
-        expect(actions?.actions.map((action) => action.action_id)).toEqual(['fight', 'perform:sword:chan']);
+        expect(actions?.actions.map((action) => action.action_id)).toEqual([
+            'fight', 'perform:sword:chan', 'exert:force:recover',
+        ]);
+        expect(actions?.actions[0]).toMatchObject({ target_mode: 'required', target_types: [] });
+        expect(actions?.actions[1]).toMatchObject({ target_mode: 'optional', target_types: [] });
+        expect(actions?.actions[2]).toMatchObject({ target_mode: 'none', target_types: [] });
+        expect(toCombatActionsSnapshot({
+            version: 1, snapshot: 1, revision: 3, sequence: 3,
+            actions: [{
+                action_id: 'fight', label: '坏能力', kind: 'fight', requires_target: 1,
+                target_mode: 'optional', target_types: ['npc'],
+            }],
+        })?.actions).toEqual([]);
     });
 
     it('builds only bounded Web.Skill.Action and Web.Combat.Action payloads', () => {
@@ -294,7 +308,22 @@ describe('GMCP codec', () => {
             action_id: 'fight', target_entity_id: 'e-session-0001',
         });
         expect(toWebCombatActionRequest('perform:sword:chan')).toEqual({ action_id: 'perform:sword:chan' });
-        expect(toWebCombatActionRequest('perform:sword:chan', 'e-session-0001')).toBeNull();
+        expect(toWebCombatActionRequest('perform:sword:chan', 'e-session-0001')).toEqual({
+            action_id: 'perform:sword:chan', target_entity_id: 'e-session-0001',
+        });
+        expect(toWebCombatActionRequest('perform:sword:chan', 'e-session-0001', 'none')).toBeNull();
+        expect(toWebCombatActionRequest('exert:force:recover', 'e-session-0001')).toBeNull();
+        expect(toWebCombatActionRequest('exert:force:suck')).toEqual({
+            action_id: 'exert:force:suck',
+        });
+        expect(toWebCombatActionRequest('exert:force:suck', 'e-session-0001')).toEqual({
+            action_id: 'exert:force:suck', target_entity_id: 'e-session-0001',
+        });
+        expect(toWebCombatActionRequest('exert:force:lifeheal')).toBeNull();
+        expect(toWebCombatActionRequest('exert:force:lifeheal', 'e-session-0001')).toEqual({
+            action_id: 'exert:force:lifeheal', target_entity_id: 'e-session-0001',
+        });
+        expect(toWebCombatActionRequest('fight', 'e-session-0001', 'optional')).toBeNull();
         expect(toWebCombatActionRequest('perform:/tmp:chan')).toBeNull();
         expect(toWebCombatActionRequest('kill\nlook', 'e-session-0001')).toBeNull();
         expect(toWebCombatActionRequest('kill', 'e-session-0001\n')).toBeNull();

@@ -19,11 +19,11 @@ describe('SkillsPanel', () => {
                 skills={[
                     {
                         skill_id: 'sword', name: '基本剑法', level: 100, progress: 20, type: 'martial',
-                        is_basic: true, enabled_for: [], prepared_for: [], enable_slots: [],
+                        is_basic: true, enabled_for: [], prepared_for: [], prepare_slots: [], enable_slots: [],
                     },
                     {
                         skill_id: 'taiji-sword', name: '太极剑法', level: 90, progress: 80, type: 'martial',
-                        is_basic: false, enabled_for: [], prepared_for: [], enable_slots: ['sword'],
+                        is_basic: false, enabled_for: [], prepared_for: [], prepare_slots: ['sword'], enable_slots: ['sword'],
                     },
                 ]}
                 status={status}
@@ -35,5 +35,36 @@ describe('SkillsPanel', () => {
         expect(onAction).toHaveBeenCalledWith('taiji-sword', 'enable', 'sword');
         fireEvent.click(screen.getByRole('button', { name: '准备' }));
         expect(onAction).toHaveBeenCalledWith('taiji-sword', 'prepare');
+    });
+
+    it('shows prepare only when the server exposes a prepare slot', () => {
+        render(
+            <SkillsPanel
+                disabled={false}
+                onAction={() => undefined}
+                skills={[
+                    {
+                        skill_id: 'sword', name: '基本剑法', level: 100, progress: 20, type: 'martial',
+                        is_basic: true, enabled_for: [], prepared_for: [], prepare_slots: [], enable_slots: [],
+                    },
+                    {
+                        skill_id: 'force', name: '基本内功', level: 100, progress: 20, type: 'force',
+                        is_basic: true, enabled_for: [], prepared_for: [], prepare_slots: [], enable_slots: [],
+                    },
+                    {
+                        skill_id: 'taiji-quan', name: '太极拳', level: 90, progress: 80, type: 'martial',
+                        is_basic: false, enabled_for: [], prepared_for: [], prepare_slots: ['unarmed'], enable_slots: [],
+                    },
+                    {
+                        skill_id: 'taiji-sword', name: '太极剑法', level: 90, progress: 80, type: 'martial',
+                        is_basic: false, enabled_for: [], prepared_for: [], prepare_slots: [], enable_slots: [],
+                    },
+                ]}
+                status={status}
+            />,
+        );
+        expect(screen.getAllByRole('button', { name: '准备' })).toHaveLength(1);
+        expect(screen.getByText('太极拳')).toBeInTheDocument();
+        expect(screen.getByText('太极剑法')).toBeInTheDocument();
     });
 });

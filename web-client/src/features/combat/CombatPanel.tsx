@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
     CombatAction,
+    CombatTargetMode,
+    CombatTargetType,
     CombatStateSnapshot,
     CharacterStatus,
     RoomEntity,
@@ -11,7 +13,7 @@ interface CombatPanelProps {
     combat: CombatStateSnapshot | null;
     disabled: boolean;
     entities: RoomEntity[];
-    onAction: (actionId: string, targetEntityId?: string) => void;
+    onAction: (actionId: string, targetEntityId?: string, targetMode?: CombatTargetMode) => void;
     status: CharacterStatus | null;
 }
 
@@ -25,24 +27,42 @@ const healthLabels: Record<string, string> = {
 };
 
 export const CombatPanel = ({ actions, combat, disabled, entities, onAction, status }: CombatPanelProps) => {
-    const nearbyNpcs = useMemo(
-        () => entities.filter((entity) => entity.type === 'npc'),
-        [entities],
+    const targetMode = (action: CombatAction): CombatTargetMode => action.target_mode
+        ?? (action.requires_target ? 'required' : 'optional');
+    const allowsEntity = (action: CombatAction, type: RoomEntity['type']): type is CombatTargetType => {
+        if (type !== 'npc' && type !== 'player') {
+            return false;
+        }
+        const targetTypes = action.target_types ?? [];
+        return targetTypes.length === 0 || targetTypes.includes(type);
+    };
+    const targetActions = actions.filter((action) => targetMode(action) !== 'none');
+    const targetEntities = useMemo(
+        () => entities.filter((entity) => targetActions.some((action) => allowsEntity(action, entity.type))),
+        [entities, targetActions],
     );
     const primaryTarget = combat?.targets.find((target) => target.entity_id === combat.primary_target)
         ?? combat?.targets[0];
     const [targetId, setTargetId] = useState('');
+    const targetTouched = useRef(false);
     const actionDisabled = disabled || status?.can_act === false || combat?.can_act === false;
 
     useEffect(() => {
-        const preferred = primaryTarget?.entity_id ?? nearbyNpcs[0]?.entity_id ?? '';
-        if (!nearbyNpcs.some((entity) => entity.entity_id === targetId)) {
-            setTargetId(preferred);
-        }
-    }, [nearbyNpcs, primaryTarget?.entity_id, targetId]);
+        const preferred = targetEntities.some((entity) => entity.entity_id === primaryTarget?.entity_id)
+            ? primaryTarget?.entity_id ?? ''
+            : targetEntities[0]?.entity_id ?? '';
+        setTargetId((current) => {
+            if (targetTouched.current && current === '') {
+                return current;
+            }
+            if (targetEntities.some((entity) => entity.entity_id === current)) {
+                return current;
+            }
+            return preferred;
+        });
+    }, [targetEntities, primaryTarget?.entity_id]);
 
-    const targetActions = actions.filter((action) => action.requires_target);
-    const techniqueActions = actions.filter((action) => !action.requires_target);
+    const techniqueActions = actions.filter((action) => targetMode(action) === 'none');
 
     return (
         <section className="panel combat-panel" aria-labelledby="combat-title">
@@ -69,25 +89,31 @@ export const CombatPanel = ({ actions, combat, disabled, entities, onAction, sta
                     <label htmlFor="combat-target">目标</label>
                     <select
                         id="combat-target"
-                        onChange={(event) => setTargetId(event.target.value)}
+                        onChange={(event) => {
+                            targetTouched.current = true;
+                            setTargetId(event.target.value);
+                        }}
                         value={targetId}
                     >
-                        <option value="">选择附近 NPC</option>
-                        {nearbyNpcs.map((entity) => (
+                        <option value="">不指定目标（可选）</option>
+                        {targetEntities.map((entity) => (
                             <option key={entity.entity_id} value={entity.entity_id}>{entity.name}</option>
                         ))}
                     </select>
                     <div className="combat-action-grid">
-                        {targetActions.map((action) => (
+                        {targetActions.map((action) => {
+                            const mode = targetMode(action);
+                            return (
                             <button
-                                disabled={actionDisabled || !targetId}
+                                disabled={actionDisabled || mode === 'required' && !targetId}
                                 key={action.action_id}
-                                onClick={() => onAction(action.action_id, targetId)}
+                                onClick={() => onAction(action.action_id, targetId || undefined, mode)}
                                 type="button"
                             >
                                 {action.label}
                             </button>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

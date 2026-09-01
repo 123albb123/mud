@@ -4,7 +4,9 @@
 
 inherit F_CLEAN_UP;
 
-private int do_perform(object me, string arg);
+private int do_perform(object me, string arg, object forced_target);
+private int perform_preflight(object me);
+private int safe_perform_token(string value);
 
 int main(object me, string arg)
 {
@@ -22,11 +24,8 @@ int main(object me, string arg)
     if (!arg)
         return notify_fail("你要用外功做什麽？\n");
 
-    if (me->query_temp("no_perform"))
-        return notify_fail(HIR "你只觉全身力道竟似涣散了一般，全然无法控制。\n" NOR);
-
-    if (me->query_temp("eff/jiuyin-shengong/xin"))
-        return notify_fail(HIR "你只觉精神恍惚，精力无法集中！暂时不能使用外功！\n");
+    if (!perform_preflight(me))
+        return 0;
 
     if (sscanf(arg, "%s and %s", arg, and) == 2 ||
         sscanf(arg, "%s twice", arg) == 1 && (and = arg))
@@ -53,7 +52,7 @@ int main(object me, string arg)
         }
     }
 
-    result = do_perform(me, arg);
+    result = do_perform(me, arg, 0);
     if (!and)
         return result;
 
@@ -90,7 +89,7 @@ int main(object me, string arg)
     busy = me->query_busy();
     me->interrupt_busy(0);
 
-    result = do_perform(me, and);
+    result = do_perform(me, and, 0);
     if (!result)
         write(query_notify_fail());
 
@@ -104,7 +103,38 @@ int main(object me, string arg)
     return 1;
 }
 
-private int do_perform(object me, string arg)
+private int perform_preflight(object me)
+{
+    if (!objectp(me) || me->is_busy())
+        return notify_fail("( 你上一个动作还没有完成，不能施用外功。)\n");
+
+    if (me->query_temp("no_perform"))
+        return notify_fail(HIR "你只觉全身力道竟似涣散了一般，全然无法控制。\n" NOR);
+
+    if (me->query_temp("eff/jiuyin-shengong/xin"))
+        return notify_fail(HIR "你只觉精神恍惚，精力无法集中！暂时不能使用外功！\n");
+
+    return 1;
+}
+
+private int safe_perform_token(string value)
+{
+    int i;
+
+    if (!stringp(value) || value == "" || strlen(value) > 64)
+        return 0;
+    for (i = 0; i < strlen(value); i++)
+    {
+        if ((value[i] >= 'a' && value[i] <= 'z') ||
+            (value[i] >= '0' && value[i] <= '9') ||
+            value[i] == '-' || value[i] == '_')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+private int do_perform(object me, string arg, object forced_target)
 {
     object weapon;
     string martial, skill;
@@ -122,13 +152,13 @@ private int do_perform(object me, string arg)
     if (stringp(skill = me->query_skill_mapped(martial)))
     {
         notify_fail("你所使用的外功中没有这种功能。\n");
-        if (SKILL_D(skill)->perform_action(me, arg))
+        if (SKILL_D(skill)->perform_action(me, arg, forced_target))
         {
             if (random(120) < (int)me->query_skill(skill))
                 me->improve_skill(skill, 1, 1);
             return 1;
         }
-        else if (SKILL_D(martial)->perform_action(me, arg))
+        else if (SKILL_D(martial)->perform_action(me, arg, forced_target))
         {
             if (random(120) < (int)me->query_skill(martial, 1))
                 me->improve_skill(martial, 1, 1);
@@ -139,6 +169,25 @@ private int do_perform(object me, string arg)
 
     return notify_fail("你现在的" + to_chinese(martial)[4..7] +
                         "(" + martial + ")中并没有这种外功。\n");
+}
+
+// Web GMCP uses this narrow entry after validating the action and entity ID.
+// It passes the exact object into the inherited parser instead of resolving an
+// ambiguous room name through present().
+int do_perform_target(object me, string martial, string action, object target)
+{
+    string request;
+
+    seteuid(getuid());
+    if (!objectp(me) || !safe_perform_token(martial) ||
+        !safe_perform_token(action) ||
+        (objectp(target) && (target == me || environment(target) != environment(me) ||
+                             !target->is_character())))
+        return 0;
+    if (!perform_preflight(me))
+        return 0;
+    request = martial + "." + action;
+    return do_perform(me, request, target);
 }
 
 int help (object me)

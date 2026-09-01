@@ -38,6 +38,8 @@ varargs void start_busy(mixed new_busy, mixed new_interrupt)
         me->gmcp_status_changed();
     if (function_exists("gmcp_combat_changed", me))
         me->gmcp_combat_changed();
+    if (function_exists("gmcp_combat_actions_changed", me))
+        me->gmcp_combat_actions_changed();
 }
 
 // This function is for temporary conditions's recovery call_outs, bcz

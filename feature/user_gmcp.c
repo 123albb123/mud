@@ -543,11 +543,12 @@ private mixed *gmcp_entity_actions(object entity, string type)
     if (entity != this_object() && living(entity))
         actions += ({(["id": "give"])});
 
-    if (type != "npc" || !objectp(room) || room->query("no_fight"))
+    if ((type != "npc" && type != "player") || !objectp(room) ||
+        room->query("no_fight"))
         return actions;
-    if (living(entity))
+    if (entity != this_object() && living(entity))
         actions += ({(["id": "fight"])});
-    if (!gmcp_entity_is_corpse(entity))
+    if (entity != this_object() && !gmcp_entity_is_corpse(entity))
         actions += ({(["id": "kill"])});
     return actions;
 }
@@ -654,6 +655,24 @@ private int gmcp_safe_skill_id(string value)
         if ((value[i] >= 'a' && value[i] <= 'z') ||
             (value[i] >= '0' && value[i] <= '9') ||
             value[i] == '-' || value[i] == '_')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+private int gmcp_safe_entity_id(string value)
+{
+    int i;
+
+    if (!stringp(value) || strlen(value) < 4 || strlen(value) > 96 ||
+        value[0] != 'e' || value[1] != '-')
+        return 0;
+    for (i = 2; i < strlen(value); i++)
+    {
+        if ((value[i] >= 'a' && value[i] <= 'z') ||
+            (value[i] >= 'A' && value[i] <= 'Z') ||
+            (value[i] >= '0' && value[i] <= '9') || value[i] == '-')
             continue;
         return 0;
     }
@@ -826,17 +845,24 @@ private mapping gmcp_skills_snapshot()
     mapping learned;
     mapping enabled;
     mapping prepared;
+    mapping prepare_types;
     mapping record;
     mixed *records;
     string *skill_ids;
     string *enabled_slots;
     string *prepared_slots;
+    string *prepare_slots;
+    string *prepare_type_slots;
+    string *prepared_keys;
     string *enable_slots;
     string *basic_types;
     string skill;
+    string prepare_slot;
     mixed valid_enable;
+    mixed valid_combine;
     int level;
     int progress;
+    int prepare_index;
     int i;
 
     skills = this_object()->query_skills();
@@ -852,6 +878,12 @@ private mapping gmcp_skills_snapshot()
     if (!mapp(prepared))
         prepared = ([]);
     basic_types = gmcp_valid_skill_types();
+    prepare_types = ([]);
+    catch(prepare_types = call_other("/cmds/skill/prepare",
+                                     "query_valid_types"));
+    if (!mapp(prepare_types))
+        prepare_types = ([]);
+    prepare_type_slots = sort_array(keys(prepare_types), (: strcmp :));
 
     records = ({});
     skill_ids = sort_array(keys(skills), (: strcmp :));
@@ -876,6 +908,38 @@ private mapping gmcp_skills_snapshot()
         foreach (string slot, string prepared_skill in prepared)
             if (prepared_skill == skill && gmcp_safe_skill_id(slot))
                 prepared_slots += ({slot});
+        prepare_slots = ({});
+        if (member_array(skill, basic_types) == -1)
+        {
+            for (prepare_index = 0;
+                 prepare_index < sizeof(prepare_type_slots);
+                 prepare_index++)
+            {
+                prepare_slot = prepare_type_slots[prepare_index];
+                if (!gmcp_safe_skill_id(prepare_slot) ||
+                    this_object()->query_skill_mapped(prepare_slot) != skill)
+                    continue;
+                if (member_array(prepare_slot, prepared_slots) != -1)
+                {
+                    prepare_slots += ({prepare_slot});
+                    continue;
+                }
+                if (sizeof(prepared) >= 2)
+                    continue;
+                valid_combine = 1;
+                if (sizeof(prepared) == 1)
+                {
+                    prepared_keys = keys(prepared);
+                    valid_combine = 0;
+                    if (sizeof(prepared_keys) == 1)
+                        catch(valid_combine =
+                             SKILL_D(skill)->valid_combine(
+                                 prepared[prepared_keys[0]]));
+                }
+                if (valid_combine)
+                    prepare_slots += ({prepare_slot});
+            }
+        }
         enable_slots = ({});
         foreach (string basic_slot in basic_types)
         {
@@ -895,6 +959,7 @@ private mapping gmcp_skills_snapshot()
             "is_basic"    : member_array(skill, basic_types) != -1,
             "enabled_for" : sort_array(enabled_slots, (: strcmp :)),
             "prepared_for": sort_array(prepared_slots, (: strcmp :)),
+            "prepare_slots": sort_array(prepare_slots, (: strcmp :)),
             "enable_slots": sort_array(enable_slots, (: strcmp :)),
         ]);
         records += ({record});
@@ -1002,6 +1067,37 @@ private mixed *gmcp_action_files(string skill, string directory)
     return names;
 }
 
+private string gmcp_combat_action_target_mode(string kind, string name)
+{
+    if (kind == "fight" || kind == "kill")
+        return "required";
+    if (kind == "exert")
+    {
+        // These force methods are explicitly self-only (or have no meaningful
+        // target parameter) in their original exert implementations.
+        if (member_array(name, ({
+                "power", "powerup", "recover", "regenerate", "heal",
+                "inspire", "roar", "tianmo", "shield", "resurrect",
+                "xun",
+            })) != -1)
+            return "none";
+        // These methods reject a missing/self target in their original code.
+        if (member_array(name, ({"lifeheal", "shot"})) != -1)
+            return "required";
+    }
+    // Skill-specific actions are intentionally conservative: the command
+    // entry resolves an exact object, while the action source retains the
+    // native default-target behavior when no object is supplied.
+    return "optional";
+}
+
+private mixed *gmcp_combat_action_target_types(string target_mode)
+{
+    if (target_mode == "none")
+        return ({});
+    return ({"npc", "player"});
+}
+
 private mixed *gmcp_combat_actions()
 {
     mapping skill_map;
@@ -1013,8 +1109,11 @@ private mixed *gmcp_combat_actions()
     string skill;
     string name;
     string action_id;
+    string target_mode;
     object room;
     object *nearby;
+    int can_fight;
+    int can_kill;
     int i;
     int j;
 
@@ -1040,11 +1139,14 @@ private mixed *gmcp_combat_actions()
             if (seen[action_id])
                 continue;
             seen[action_id] = 1;
+            target_mode = gmcp_combat_action_target_mode("perform", name);
             records += ({([
                 "action_id"      : action_id,
                 "label"          : gmcp_skill_name(skill) + "·" + name,
                 "kind"           : "perform",
-                "requires_target": 0,
+                "requires_target": target_mode == "required",
+                "target_mode"    : target_mode,
+                "target_types"   : gmcp_combat_action_target_types(target_mode),
             ])});
         }
     }
@@ -1061,11 +1163,14 @@ private mixed *gmcp_combat_actions()
             if (seen[action_id])
                 continue;
             seen[action_id] = 1;
+            target_mode = gmcp_combat_action_target_mode("exert", name);
             records += ({([
                 "action_id"      : action_id,
                 "label"          : gmcp_skill_name(skill) + "·" + name,
                 "kind"           : "exert",
-                "requires_target": 0,
+                "requires_target": target_mode == "required",
+                "target_mode"    : target_mode,
+                "target_types"   : gmcp_combat_action_target_types(target_mode),
             ])});
         }
     }
@@ -1074,24 +1179,34 @@ private mixed *gmcp_combat_actions()
     nearby = objectp(room) ? all_inventory(room) : ({});
     for (j = 0; j < sizeof(nearby); j++)
     {
-        if (gmcp_entity_type(nearby[j]) == "npc" &&
-            gmcp_entity_action_available(nearby[j], "fight"))
-        {
-            records += ({([
-                "action_id"      : "fight",
-                "label"          : "切磋",
-                "kind"           : "fight",
-                "requires_target": 1,
-            ])});
-            records += ({([
-                "action_id"      : "kill",
-                "label"          : "攻击",
-                "kind"           : "kill",
-                "requires_target": 1,
-            ])});
+        if (gmcp_entity_type(nearby[j]) != "npc" &&
+            gmcp_entity_type(nearby[j]) != "player")
+            continue;
+        if (!can_fight && gmcp_entity_action_available(nearby[j], "fight"))
+            can_fight = 1;
+        if (!can_kill && gmcp_entity_action_available(nearby[j], "kill"))
+            can_kill = 1;
+        if (can_fight && can_kill)
             break;
-        }
     }
+    if (can_fight)
+        records += ({([
+            "action_id"      : "fight",
+            "label"          : "切磋",
+            "kind"           : "fight",
+            "requires_target": 1,
+            "target_mode"    : "required",
+            "target_types"   : ({"npc", "player"}),
+        ])});
+    if (can_kill)
+        records += ({([
+            "action_id"      : "kill",
+            "label"          : "攻击",
+            "kind"           : "kill",
+            "requires_target": 1,
+            "target_mode"    : "required",
+            "target_types"   : ({"npc", "player"}),
+        ])});
 
     return sort_array(records, (: strcmp($1["action_id"], $2["action_id"]) :));
 }
@@ -1854,6 +1969,51 @@ private int gmcp_entity_action_available(object entity, string action)
     return 0;
 }
 
+private int gmcp_combat_target_allowed(object target, string action_kind)
+{
+    string type;
+
+    if (!objectp(target) || target == this_object() ||
+        environment(target) != environment(this_object()) ||
+        !gmcp_entity_is_visible(target) ||
+        (!living(target) && action_kind != "kill") ||
+        gmcp_entity_is_corpse(target))
+        return 0;
+    type = gmcp_entity_type(target);
+    return type == "npc" || type == "player";
+}
+
+private int gmcp_combat_target_type_allowed(mapping action, object target)
+{
+    mixed *target_types;
+    string type;
+    string action_kind;
+
+    if (!mapp(action))
+        return 0;
+    action_kind = action["kind"];
+    if (!gmcp_combat_target_allowed(target, action_kind))
+        return 0;
+    target_types = action["target_types"];
+    if (!pointerp(target_types) || sizeof(target_types) == 0)
+        return 1;
+    type = gmcp_entity_type(target);
+    return member_array(type, target_types) != -1;
+}
+
+private void gmcp_write_native_action_failure(string fallback)
+{
+    string message;
+
+    message = "";
+    catch(message = query_notify_fail());
+    if (!stringp(message) || message == "")
+        message = fallback;
+    if (strsrch(message, "\n") == -1)
+        message += "\n";
+    write(message);
+}
+
 private string gmcp_entity_request_text(mixed value, int required, int limit)
 {
     if (!stringp(value))
@@ -2183,8 +2343,12 @@ private void gmcp_handle_web_combat_action(string payload)
     object target;
     string action_id;
     string target_entity_id;
+    string target_mode;
     string *parts;
+    mixed *request_keys;
     mixed result;
+    int has_target;
+    int i;
 
     if (catch(decoded = json_decode(payload)) || !mapp(decoded))
     {
@@ -2193,6 +2357,18 @@ private void gmcp_handle_web_combat_action(string payload)
     }
     data = decoded;
     action_id = data["action_id"];
+    request_keys = keys(data);
+    for (i = 0; i < sizeof(request_keys); i++)
+    {
+        if (!stringp(request_keys[i]) ||
+            (request_keys[i] != "action_id" &&
+             request_keys[i] != "target_entity_id"))
+        {
+            gmcp_combat_action_failed("战斗操作请求包含不被允许的字段。" );
+            return;
+        }
+    }
+    has_target = !undefinedp(data["target_entity_id"]);
     target_entity_id = data["target_entity_id"];
     action = gmcp_find_combat_action(action_id);
     if (!mapp(action))
@@ -2206,32 +2382,51 @@ private void gmcp_handle_web_combat_action(string payload)
         return;
     }
 
-    if (action["requires_target"])
+    target_mode = action["target_mode"];
+    if (!stringp(target_mode))
+        target_mode = action["requires_target"] ? "required" : "optional";
+    if (target_mode != "none" && target_mode != "optional" &&
+        target_mode != "required")
     {
-        if (!stringp(target_entity_id) ||
-            strsrch(target_entity_id, "\n") != -1 ||
-            strsrch(target_entity_id, "\r") != -1)
-        {
-            gmcp_combat_action_failed("这个战斗动作需要附近目标。" );
-            return;
-        }
+        gmcp_combat_action_failed("该战斗动作的目标能力无效。" );
+        return;
+    }
+    if (has_target && (!stringp(target_entity_id) ||
+                       !gmcp_safe_entity_id(target_entity_id)))
+    {
+        gmcp_combat_action_failed("战斗操作目标无效。" );
+        return;
+    }
+    if (target_mode == "required" && !has_target)
+    {
+        gmcp_combat_action_failed("这个战斗动作需要附近目标。" );
+        return;
+    }
+    if (target_mode == "none" && has_target)
+    {
+        gmcp_combat_action_failed("当前战斗动作不接受目标。" );
+        return;
+    }
+
+    if (has_target)
+    {
         target = gmcp_find_entity(target_entity_id);
-        if (!objectp(target) || gmcp_entity_type(target) != "npc" ||
-            !gmcp_entity_action_available(target, action["kind"]))
+        if (!gmcp_combat_target_type_allowed(action, target))
         {
             gmcp_combat_action_failed("该目标已经不在附近或不能执行这个动作。" );
             return;
         }
-        result = gmcp_run_entity_action(target, action["kind"], "");
-    }
-    else
-    {
-        if (target_entity_id)
+        if (action["kind"] == "fight" || action["kind"] == "kill")
         {
-            gmcp_combat_action_failed("当前可发现招式不接受客户端指定目标。" );
-            return;
+            if (!gmcp_entity_action_available(target, action["kind"]))
+            {
+                gmcp_combat_action_failed("该目标已经不在附近或不能执行这个动作。" );
+                return;
+            }
+            notify_fail("");
+            result = gmcp_run_entity_action(target, action["kind"], "");
         }
-        if (action["kind"] == "perform")
+        else if (action["kind"] == "perform")
         {
             parts = explode(action_id, ":");
             if (sizeof(parts) != 3)
@@ -2239,9 +2434,10 @@ private void gmcp_handle_web_combat_action(string payload)
                 gmcp_combat_action_failed("该战斗动作当前不可用。" );
                 return;
             }
-            if (catch(result = call_other("/cmds/skill/perform", "main",
-                                          this_object(), parts[1] + "." +
-                                          parts[2])))
+            notify_fail("");
+            if (catch(result = call_other("/cmds/skill/perform",
+                                          "do_perform_target", this_object(),
+                                          parts[1], parts[2], target)))
             {
                 gmcp_combat_action_failed("外功施展失败，请查看当前状态。" );
                 return;
@@ -2255,22 +2451,61 @@ private void gmcp_handle_web_combat_action(string payload)
                 gmcp_combat_action_failed("该战斗动作当前不可用。" );
                 return;
             }
-            if (catch(result = call_other("/cmds/skill/exert", "main",
-                                          this_object(), parts[2])))
+            notify_fail("");
+            if (catch(result = call_other("/cmds/skill/exert",
+                                          "do_exert_target", this_object(),
+                                          parts[2], target)))
             {
                 gmcp_combat_action_failed("内功施展失败，请查看当前状态。" );
                 return;
             }
         }
-        else
+        else if (action["kind"] != "perform" && action["kind"] != "exert")
         {
             gmcp_combat_action_failed("该战斗动作当前不可用。" );
             return;
         }
     }
+    else if (action["kind"] == "perform")
+    {
+        parts = explode(action_id, ":");
+        if (sizeof(parts) != 3)
+        {
+            gmcp_combat_action_failed("该战斗动作当前不可用。" );
+            return;
+        }
+        notify_fail("");
+        if (catch(result = call_other("/cmds/skill/perform", "do_perform_target",
+                                      this_object(), parts[1], parts[2], 0)))
+        {
+            gmcp_combat_action_failed("外功施展失败，请查看当前状态。" );
+            return;
+        }
+    }
+    else if (action["kind"] == "exert")
+    {
+        parts = explode(action_id, ":");
+        if (sizeof(parts) != 3 || parts[1] != "force")
+        {
+            gmcp_combat_action_failed("该战斗动作当前不可用。" );
+            return;
+        }
+        notify_fail("");
+        if (catch(result = call_other("/cmds/skill/exert", "do_exert_target",
+                                      this_object(), parts[2], 0)))
+        {
+            gmcp_combat_action_failed("内功施展失败，请查看当前状态。" );
+            return;
+        }
+    }
+    else
+    {
+        gmcp_combat_action_failed("该战斗动作当前不可用。" );
+        return;
+    }
 
     if (!result)
-        write("战斗动作未能完成，请查看原有游戏文字。\n");
+        gmcp_write_native_action_failure("战斗动作未能完成，请查看原有游戏文字。");
     gmcp_vitals_changed();
     gmcp_status_changed();
     gmcp_combat_changed();

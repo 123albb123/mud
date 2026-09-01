@@ -31,10 +31,14 @@ private void gmcp_combat_state_changed(object other)
         me->gmcp_combat_changed();
     if (function_exists("gmcp_status_changed", me))
         me->gmcp_status_changed();
+    if (function_exists("gmcp_combat_actions_changed", me))
+        me->gmcp_combat_actions_changed();
     if (objectp(other) && function_exists("gmcp_combat_changed", other))
         other->gmcp_combat_changed();
     if (objectp(other) && function_exists("gmcp_status_changed", other))
         other->gmcp_status_changed();
+    if (objectp(other) && function_exists("gmcp_combat_actions_changed", other))
+        other->gmcp_combat_actions_changed();
 }
 
 object *query_enemy()  { return enemy; }

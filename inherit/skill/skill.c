@@ -93,20 +93,21 @@ void skill_improved(object me) {}
 // that takes the function name as argument and return the file name that
 // defines the specified function.
 
-int exert_function(object me, string arg)
+varargs int exert_function(object me, string arg, object forced_target)
 {
     string func, target, file;
     object target_ob;
 
     if (sscanf(arg, "%s %s", func, target) == 2)
     {
-        target_ob = present(target, environment(me));
+        target_ob = objectp(forced_target)
+            ? forced_target : present(target, environment(me));
         if( !target_ob ) return notify_fail("这里没有 " + target + "。\n");
     }
     else
     {
         func = arg;
-        target_ob = me;
+        target_ob = objectp(forced_target) ? forced_target : me;
     }
 
     if (! stringp(file = (string)this_object()->exert_function_file(func)) ||
@@ -116,19 +117,21 @@ int exert_function(object me, string arg)
     return (int)call_other(file, "exert", me, target_ob);
 }
 
-int perform_action(object me, string arg)
+varargs int perform_action(object me, string arg, object forced_target)
 {
     string action, target, file;
     object target_ob;
 
     if (sscanf(arg, "%s %s", action, target) == 2)
     {
-        target_ob = present(target, environment(me));
+        target_ob = objectp(forced_target)
+            ? forced_target : present(target, environment(me));
         if (! target_ob) return notify_fail("这里没有" + target + "。\n");
     }
     else
     {
         action = arg;
+        target_ob = forced_target;
     }
 
     if (! stringp(file = (string)this_object()->perform_action_file(action)) ||
