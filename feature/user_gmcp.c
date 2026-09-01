@@ -11,12 +11,21 @@
 #define GMCP_CHAT_TARGET_LIMIT 300
 #define GMCP_CHAT_TEXT_LIMIT 2048
 #define GMCP_CHAT_TARGETS_VERSION 1
+#define GMCP_MAP_VERSION 1
+#define GMCP_MAP_EXIT_LIMIT 64
+#define GMCP_MAP_TEXT_LIMIT 160
+#define GMCP_MAP_COMMAND_LIMIT 96
 #define GMCP_ACTION_D "/adm/daemons/gmcp_actiond"
 
 nosave string *gmcp_log = ({});
 private nosave mapping gmcp_room_ids = ([]);
 private nosave string gmcp_room_session;
 private nosave int gmcp_room_sequence;
+private nosave mapping gmcp_map_exit_records = ([]);
+private nosave string gmcp_map_exit_session;
+private nosave int gmcp_map_exit_sequence;
+private nosave int gmcp_map_revision;
+private nosave string gmcp_map_fingerprint;
 private nosave mapping gmcp_item_ids = ([]);
 private nosave string gmcp_item_session;
 private nosave int gmcp_item_sequence;
@@ -87,12 +96,23 @@ void gmcp_chat_private_message(string kind, object sender, object recipient,
 void gmcp_chat_private_delivered(string kind, string sender_name,
                                  string sender_id, string text);
 private void gmcp_handle_web_chat_send(string payload);
+private void gmcp_refresh_room_map(int force);
+private void gmcp_write_native_action_failure(string fallback);
 
-private string query_gmcp_room_id(object room)
+private int gmcp_room_is_area(object room)
 {
-    string key;
+    mixed result;
 
-    if (!objectp(room))
+    if (!objectp(room) || !function_exists("is_area", room))
+        return 0;
+    if (catch(result = call_other(room, "is_area")))
+        return 0;
+    return intp(result) && result != 0;
+}
+
+private string query_gmcp_room_id_for_key(string key)
+{
+    if (!stringp(key) || key == "")
         return "";
 
     if (!mapp(gmcp_room_ids))
@@ -100,7 +120,6 @@ private string query_gmcp_room_id(object room)
     if (!stringp(gmcp_room_session))
         gmcp_room_session = sprintf("%08x", random(0x7fffffff));
 
-    key = file_name(room);
     if (!stringp(gmcp_room_ids[key]))
     {
         gmcp_room_sequence++;
@@ -110,6 +129,39 @@ private string query_gmcp_room_id(object room)
     }
 
     return gmcp_room_ids[key];
+}
+
+private string query_gmcp_room_id_at(object room, int x, int y,
+                                     int use_coordinate)
+{
+    string key;
+
+    if (!objectp(room))
+        return "";
+
+    key = file_name(room);
+    if (use_coordinate && gmcp_room_is_area(room))
+        key += sprintf("@%d,%d", x, y);
+    return query_gmcp_room_id_for_key(key);
+}
+
+private string query_gmcp_room_id(object room)
+{
+    mapping info;
+
+    if (!objectp(room))
+        return "";
+
+    if (gmcp_room_is_area(room) && room == environment(this_object()))
+    {
+        info = 0;
+        catch(info = this_object()->query("area_info"));
+        if (mapp(info) && intp(info["x_axis"]) && intp(info["y_axis"]))
+            return query_gmcp_room_id_at(room, info["x_axis"],
+                                         info["y_axis"], 1);
+    }
+
+    return query_gmcp_room_id_at(room, 0, 0, 0);
 }
 
 private string query_gmcp_item_id(object item)
@@ -734,6 +786,733 @@ private string gmcp_task_text(mixed value, int limit, int multiline)
     if (strlen(text) > limit)
         text = text[0..limit - 1];
     return text;
+}
+
+private mixed gmcp_map_query(object room, string key)
+{
+    mixed value;
+
+    if (!objectp(room) || !stringp(key))
+        return 0;
+    value = 0;
+    if (catch(value = room->query(key)))
+        return 0;
+    return value;
+}
+
+private string gmcp_map_text(mixed value, int limit)
+{
+    string text;
+    string result;
+    int i;
+
+    text = gmcp_task_text(value, limit, 0);
+    result = "";
+    for (i = 0; i < strlen(text); i++)
+    {
+        if (text[i] < 32 || text[i] == 127)
+            continue;
+        result += text[i..i];
+    }
+    if (strlen(result) > limit)
+        result = result[0..limit - 1];
+    return result;
+}
+
+private mapping gmcp_map_current_area_info(object room)
+{
+    mapping info;
+
+    if (!gmcp_room_is_area(room) || room != environment(this_object()))
+        return 0;
+
+    info = 0;
+    catch(info = this_object()->query("area_info"));
+    if (!mapp(info) || !intp(info["x_axis"]) || !intp(info["y_axis"]))
+        return 0;
+    return ([
+        "x_axis": info["x_axis"],
+        "y_axis": info["y_axis"],
+    ]);
+}
+
+private string gmcp_map_room_name(object room, int x, int y, int use_coordinate)
+{
+    mixed value;
+
+    value = 0;
+    if (use_coordinate && function_exists("query_data", room))
+        catch(value = call_other(room, "query_data", x, y, "short"));
+    if (!stringp(value) || value == "")
+        value = gmcp_map_query(room, "short");
+    if (!stringp(value) || value == "")
+        value = gmcp_map_query(room, "name");
+    return gmcp_map_text(value, GMCP_MAP_TEXT_LIMIT);
+}
+
+private string gmcp_map_area_name(object room)
+{
+    mixed value;
+
+    value = gmcp_map_query(room, "outdoors");
+    if (!stringp(value) || value == "")
+        value = gmcp_map_query(room, "area");
+    if ((!stringp(value) || value == "") && gmcp_room_is_area(room))
+        value = gmcp_map_query(room, "name");
+    return gmcp_map_text(value, GMCP_MAP_TEXT_LIMIT);
+}
+
+private mapping gmcp_map_room_record(object room, int x, int y,
+                                     int use_coordinate)
+{
+    mapping record;
+    string room_id;
+    string area;
+
+    if (!objectp(room))
+        return 0;
+
+    room_id = use_coordinate
+        ? query_gmcp_room_id_at(room, x, y, 1)
+        : query_gmcp_room_id(room);
+    if (room_id == "")
+        return 0;
+
+    record = ([
+        "room_id": room_id,
+        "name"   : gmcp_map_room_name(room, x, y, use_coordinate),
+    ]);
+    area = gmcp_map_area_name(room);
+    if (area != "")
+        record["area"] = area;
+    return record;
+}
+
+private mapping gmcp_map_direction_labels()
+{
+    return ([
+        "north"     : "北",
+        "south"     : "南",
+        "east"      : "东",
+        "west"      : "西",
+        "northeast" : "东北",
+        "northwest" : "西北",
+        "southeast" : "东南",
+        "southwest" : "西南",
+        "northup"   : "北上",
+        "southup"   : "南上",
+        "eastup"    : "东上",
+        "westup"    : "西上",
+        "northdown" : "北下",
+        "southdown" : "南下",
+        "eastdown"  : "东下",
+        "westdown"  : "西下",
+        "up"         : "上",
+        "down"       : "下",
+        "enter"      : "进入",
+        "in"         : "进入",
+        "out"        : "出去",
+    ]);
+}
+
+private string gmcp_map_exit_label(string command)
+{
+    mapping labels;
+    string label;
+
+    labels = gmcp_map_direction_labels();
+    label = labels[command];
+    if (stringp(label) && label != "")
+        return label;
+    label = gmcp_map_text(command, GMCP_MAP_TEXT_LIMIT);
+    return label == "" ? "特殊通路" : label;
+}
+
+private string gmcp_map_exit_kind(string command)
+{
+    if (command == "up" || command == "down" ||
+        command == "northup" || command == "southup" ||
+        command == "eastup" || command == "westup" ||
+        command == "northdown" || command == "southdown" ||
+        command == "eastdown" || command == "westdown")
+        return "vertical";
+    if (command == "enter" || command == "in" || command == "out")
+        return "portal";
+    if (command == "north" || command == "south" ||
+        command == "east" || command == "west" ||
+        command == "northeast" || command == "northwest" ||
+        command == "southeast" || command == "southwest")
+        return "direction";
+    return "special";
+}
+
+private int gmcp_map_command_allowed(mixed value)
+{
+    string command;
+    int i;
+
+    if (!stringp(value))
+        return 0;
+    command = value;
+    if (command == "" || strlen(command) > GMCP_MAP_COMMAND_LIMIT ||
+        strsrch(command, "/") != -1 || strsrch(command, "\\") != -1)
+        return 0;
+    for (i = 0; i < strlen(command); i++)
+    {
+        if (command[i] < 32 || command[i] == 127)
+            return 0;
+    }
+    return 1;
+}
+
+private mapping gmcp_map_area_neighbor(string command, int x, int y)
+{
+    mapping result;
+    int target_x;
+    int target_y;
+
+    target_x = x;
+    target_y = y;
+    switch (command)
+    {
+    case "northwest":
+        target_x--;
+        target_y--;
+        break;
+    case "north":
+        target_y--;
+        break;
+    case "northeast":
+        target_x++;
+        target_y--;
+        break;
+    case "west":
+        target_x--;
+        break;
+    case "east":
+        target_x++;
+        break;
+    case "southwest":
+        target_x--;
+        target_y++;
+        break;
+    case "south":
+        target_y++;
+        break;
+    case "southeast":
+        target_x++;
+        target_y++;
+        break;
+    default:
+        return 0;
+    }
+
+    result = ([
+        "x_axis": target_x,
+        "y_axis": target_y,
+    ]);
+    return result;
+}
+
+private int gmcp_map_exit_conditional(object room, string command)
+{
+    mapping doors;
+    mixed guarded;
+
+    doors = gmcp_map_query(room, "doors");
+    if (mapp(doors) && !undefinedp(doors[command]))
+        return 1;
+
+    guarded = 0;
+    catch(guarded = room->query_temp("guarded/" + command));
+    return arrayp(guarded) && sizeof(guarded) > 0;
+}
+
+private mapping gmcp_map_base_exit(object room, string command)
+{
+    mapping record;
+
+    record = ([
+        "command"        : gmcp_map_text(command, GMCP_MAP_TEXT_LIMIT),
+        "label"           : gmcp_map_exit_label(command),
+        "kind"            : gmcp_map_exit_kind(command),
+        "resolved"        : 0,
+        "dynamic"         : 0,
+        "_server_command": command,
+    ]);
+    if (record["command"] == "")
+        record["command"] = "特殊通路";
+    if (gmcp_map_exit_conditional(room, command))
+        record["conditional"] = 1;
+    return record;
+}
+
+private mapping gmcp_map_resolve_destination(mixed destination)
+{
+    mapping result;
+    object target;
+    string path;
+
+    result = ([
+        "resolved": 0,
+        "dynamic" : 0,
+    ]);
+    if (objectp(destination))
+    {
+        result["resolved"] = 1;
+        result["object"] = destination;
+        return result;
+    }
+    if (stringp(destination))
+    {
+        path = destination;
+        if (path == "" || strlen(path) > 240 ||
+            strsrch(path, "\n") != -1 || strsrch(path, "\r") != -1)
+        {
+            result["dynamic"] = 1;
+            return result;
+        }
+        target = 0;
+        if (catch(target = find_object(path)) || !objectp(target))
+            return result;
+        result["resolved"] = 1;
+        result["object"] = target;
+        return result;
+    }
+    if (mapp(destination))
+    {
+        path = destination["filename"];
+        if (!stringp(path) || path == "" || strlen(path) > 240 ||
+            !intp(destination["x_axis"]) || !intp(destination["y_axis"]) ||
+            strsrch(path, "\n") != -1 || strsrch(path, "\r") != -1)
+        {
+            result["dynamic"] = 1;
+            return result;
+        }
+        target = 0;
+        if (catch(target = find_object(path)) || !objectp(target))
+            return result;
+        result["resolved"] = 1;
+        result["object"] = target;
+        result["has_coordinate"] = 1;
+        result["x_axis"] = destination["x_axis"];
+        result["y_axis"] = destination["y_axis"];
+        return result;
+    }
+    result["dynamic"] = 1;
+    return result;
+}
+
+private string gmcp_map_destination_name(object room, int x, int y,
+                                          int use_coordinate)
+{
+    return gmcp_map_room_name(room, x, y, use_coordinate);
+}
+
+private void gmcp_map_fill_destination(mapping record, mapping destination)
+{
+    object target;
+    string room_id;
+    string name;
+    int has_coordinate;
+    int x;
+    int y;
+
+    if (!mapp(record) || !mapp(destination))
+        return;
+    if (destination["dynamic"])
+    {
+        record["dynamic"] = 1;
+        return;
+    }
+    if (!destination["resolved"] || !objectp(target = destination["object"]))
+        return;
+
+    has_coordinate = intp(destination["has_coordinate"]) &&
+                     destination["has_coordinate"] != 0;
+    x = destination["x_axis"];
+    y = destination["y_axis"];
+    if (gmcp_room_is_area(target))
+    {
+        if (!has_coordinate)
+        {
+            record["dynamic"] = 1;
+            return;
+        }
+        room_id = query_gmcp_room_id_at(target, x, y, 1);
+        name = gmcp_map_destination_name(target, x, y, 1);
+    }
+    else
+    {
+        room_id = query_gmcp_room_id(target);
+        name = gmcp_map_destination_name(target, 0, 0, 0);
+    }
+    if (room_id == "")
+        return;
+
+    record["resolved"] = 1;
+    record["destination_room_id"] = room_id;
+    if (name != "")
+        record["destination_name"] = name;
+}
+
+private mapping gmcp_map_room_exit_record(object room, string command,
+                                          mixed destination)
+{
+    mapping record;
+    mapping destination_info;
+
+    record = gmcp_map_base_exit(room, command);
+    destination_info = gmcp_map_resolve_destination(destination);
+    gmcp_map_fill_destination(record, destination_info);
+    return record;
+}
+
+private mapping gmcp_map_area_exit_record(object room, string command,
+                                          int x, int y)
+{
+    mapping record;
+    mapping neighbor;
+    mapping cell;
+    mapping destination;
+    mapping destination_info;
+    mixed raw_exit;
+    string path;
+
+    record = gmcp_map_base_exit(room, command);
+    neighbor = gmcp_map_area_neighbor(command, x, y);
+    if (!mapp(neighbor))
+        return record;
+
+    cell = 0;
+    catch(cell = room->query_info(neighbor["x_axis"], neighbor["y_axis"]));
+    if (!mapp(cell))
+        return record;
+
+    if (!undefinedp(cell["room_exit"]))
+    {
+        raw_exit = cell["room_exit"];
+        if (!stringp(raw_exit))
+        {
+            record["dynamic"] = 1;
+            return record;
+        }
+        path = "";
+        catch(path = room->file_path(raw_exit));
+        if (!stringp(path) || path == "")
+            path = raw_exit;
+        destination_info = gmcp_map_resolve_destination(path);
+        gmcp_map_fill_destination(record, destination_info);
+        return record;
+    }
+
+    if (!undefinedp(cell["area_exit"]))
+    {
+        if (!mapp(cell["area_exit"]) ||
+            !stringp(cell["area_exit"]["filename"]) ||
+            !intp(cell["area_exit"]["x_axis"]) ||
+            !intp(cell["area_exit"]["y_axis"]))
+        {
+            record["dynamic"] = 1;
+            return record;
+        }
+        path = "";
+        catch(path = room->file_path(cell["area_exit"]["filename"]));
+        if (!stringp(path) || path == "")
+            path = cell["area_exit"]["filename"];
+        destination = ([
+            "filename": path,
+            "x_axis"  : cell["area_exit"]["x_axis"],
+            "y_axis"  : cell["area_exit"]["y_axis"],
+        ]);
+        destination_info = gmcp_map_resolve_destination(destination);
+        gmcp_map_fill_destination(record, destination_info);
+        return record;
+    }
+
+    record["resolved"] = 1;
+    record["destination_room_id"] = query_gmcp_room_id_at(
+        room, neighbor["x_axis"], neighbor["y_axis"], 1);
+    record["destination_name"] = gmcp_map_destination_name(
+        room, neighbor["x_axis"], neighbor["y_axis"], 1);
+    return record;
+}
+
+private string *gmcp_map_room_commands(object room)
+{
+    mapping area_info;
+    mapping exits;
+    mixed *exit_keys;
+    string *commands;
+    int i;
+
+    commands = ({});
+    if (gmcp_room_is_area(room))
+    {
+        area_info = gmcp_map_current_area_info(room);
+        if (!mapp(area_info) || !function_exists("query_exits", room))
+            return commands;
+        if (catch(commands = room->query_exits(area_info["x_axis"],
+                                               area_info["y_axis"])))
+            return ({});
+        if (!pointerp(commands))
+            return ({});
+    }
+    else
+    {
+        exits = gmcp_map_query(room, "exits");
+        if (!mapp(exits))
+            return commands;
+        exit_keys = keys(exits);
+        for (i = 0; i < sizeof(exit_keys); i++)
+        {
+            if (stringp(exit_keys[i]))
+                commands += ({exit_keys[i]});
+        }
+    }
+
+    commands = filter_array(commands, (: gmcp_map_command_allowed($1) :));
+    commands = sort_array(commands, (: strcmp($1, $2) :));
+    return commands;
+}
+
+private mapping gmcp_map_snapshot()
+{
+    object room;
+    mapping area_info;
+    mapping exits;
+    mapping current;
+    mapping record;
+    mixed *records;
+    string *commands;
+    string command;
+    int i;
+
+    room = environment(this_object());
+    if (!objectp(room))
+        return 0;
+
+    area_info = gmcp_map_current_area_info(room);
+    current = gmcp_map_room_record(room,
+                                   mapp(area_info) ? area_info["x_axis"] : 0,
+                                   mapp(area_info) ? area_info["y_axis"] : 0,
+                                   mapp(area_info));
+    if (!mapp(current))
+        return 0;
+
+    records = ({});
+    commands = gmcp_map_room_commands(room);
+    if (mapp(area_info))
+    {
+        for (i = 0; i < sizeof(commands) &&
+             sizeof(records) < GMCP_MAP_EXIT_LIMIT; i++)
+        {
+            record = gmcp_map_area_exit_record(room, commands[i],
+                                               area_info["x_axis"],
+                                               area_info["y_axis"]);
+            if (mapp(record))
+                records += ({record});
+        }
+    }
+    else
+    {
+        exits = gmcp_map_query(room, "exits");
+        for (i = 0; i < sizeof(commands) &&
+             sizeof(records) < GMCP_MAP_EXIT_LIMIT; i++)
+        {
+            command = commands[i];
+            record = gmcp_map_room_exit_record(room, command, exits[command]);
+            if (mapp(record))
+                records += ({record});
+        }
+    }
+
+    return ([
+        "version"         : GMCP_MAP_VERSION,
+        "snapshot"        : 1,
+        "current_room_id" : current["room_id"],
+        "room"            : current,
+        "exits"           : records,
+    ]);
+}
+
+private mapping gmcp_map_public_snapshot(mapping snapshot)
+{
+    mapping result;
+    mapping record;
+    mixed *records;
+    mixed *public_records;
+    int i;
+
+    if (!mapp(snapshot))
+        return 0;
+    result = copy(snapshot);
+    records = snapshot["exits"];
+    public_records = ({});
+    if (pointerp(records))
+    {
+        for (i = 0; i < sizeof(records); i++)
+        {
+            if (!mapp(record = records[i]))
+                continue;
+            record = copy(record);
+            map_delete(record, "_server_command");
+            public_records += ({record});
+        }
+    }
+    result["exits"] = public_records;
+    return result;
+}
+
+private string query_gmcp_map_exit_id()
+{
+    if (!stringp(gmcp_map_exit_session))
+        gmcp_map_exit_session = sprintf("%08x", random(0x7fffffff));
+    gmcp_map_exit_sequence++;
+    return sprintf("x-%s-%04d", gmcp_map_exit_session,
+                   gmcp_map_exit_sequence);
+}
+
+private void gmcp_refresh_room_map(int force)
+{
+    mapping snapshot;
+    mapping public_snapshot;
+    mapping record;
+    mapping public_record;
+    mixed *records;
+    mixed *public_records;
+    string fingerprint;
+    string exit_id;
+    string command;
+    object room;
+    int i;
+
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Room.Map"))
+        return;
+
+    snapshot = gmcp_map_snapshot();
+    public_snapshot = gmcp_map_public_snapshot(snapshot);
+    if (!mapp(snapshot) || !mapp(public_snapshot))
+        return;
+
+    fingerprint = gmcp_state_fingerprint(public_snapshot);
+    if (!force && gmcp_map_revision > 0 &&
+        fingerprint == gmcp_map_fingerprint)
+        return;
+    if (fingerprint != gmcp_map_fingerprint || gmcp_map_revision == 0)
+        gmcp_map_revision++;
+
+    room = environment(this_object());
+    if (!objectp(room))
+        return;
+    gmcp_map_exit_records = ([]);
+    records = snapshot["exits"];
+    public_records = public_snapshot["exits"];
+    for (i = 0; i < sizeof(records) && i < sizeof(public_records); i++)
+    {
+        record = records[i];
+        public_record = public_records[i];
+        if (!mapp(record) || !mapp(public_record))
+            continue;
+        exit_id = query_gmcp_map_exit_id();
+        command = record["_server_command"];
+        if (!stringp(command))
+            continue;
+        public_record["exit_id"] = exit_id;
+        gmcp_map_exit_records[exit_id] = ([
+            "room"    : room,
+            "room_id" : public_snapshot["current_room_id"],
+            "revision": gmcp_map_revision,
+            "command" : command,
+            "is_area" : gmcp_room_is_area(room),
+        ]);
+    }
+    public_snapshot["revision"] = gmcp_map_revision;
+    public_snapshot["sequence"] = gmcp_map_revision;
+    sendGMCP(public_snapshot, "Room", "Map");
+    gmcp_map_fingerprint = fingerprint;
+}
+
+private int gmcp_safe_map_exit_id(string value)
+{
+    int i;
+
+    if (!stringp(value) || strlen(value) < 5 || strlen(value) > 96 ||
+        value[0] != 'x' || value[1] != '-')
+        return 0;
+    for (i = 2; i < strlen(value); i++)
+    {
+        if ((value[i] >= 'a' && value[i] <= 'z') ||
+            (value[i] >= 'A' && value[i] <= 'Z') ||
+            (value[i] >= '0' && value[i] <= '9') || value[i] == '-')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+private void gmcp_map_action_failed(string message)
+{
+    write(message + "\n");
+    gmcp_refresh_room_map(0);
+}
+
+private void gmcp_handle_web_room_move(string payload)
+{
+    mixed decoded;
+    mapping data;
+    mapping record;
+    string exit_id;
+    string move_command;
+    string input;
+    object room;
+    int result;
+
+    if (catch(decoded = json_decode(payload)) || !mapp(decoded))
+    {
+        gmcp_map_action_failed("地图移动请求无效。");
+        return;
+    }
+    data = decoded;
+    if (sizeof(keys(data)) != 1 ||
+        !stringp(exit_id = data["exit_id"]) ||
+        !gmcp_safe_map_exit_id(exit_id))
+    {
+        gmcp_map_action_failed("地图出口请求无效。");
+        return;
+    }
+
+    record = gmcp_map_exit_records[exit_id];
+    room = environment(this_object());
+    if (!mapp(record) || !objectp(room) || record["room"] != room ||
+        record["revision"] != gmcp_map_revision ||
+        record["room_id"] != query_gmcp_room_id(room))
+    {
+        gmcp_map_action_failed("地图出口已经失效，请等待当前房间同步。");
+        return;
+    }
+
+    move_command = record["command"];
+    if (!gmcp_map_command_allowed(move_command))
+    {
+        gmcp_map_action_failed("地图出口当前不可用。");
+        return;
+    }
+    input = record["is_area"] ? "go " + move_command : move_command;
+    notify_fail("");
+    if (catch(result = command(this_object()->process_input(input))))
+    {
+        gmcp_map_action_failed("地图移动失败，请查看原有游戏文字。");
+        return;
+    }
+    if (!result)
+    {
+        gmcp_write_native_action_failure("地图移动未能完成，请查看原有游戏文字。");
+        gmcp_refresh_room_map(0);
+        return;
+    }
+    gmcp_refresh_room_map(0);
 }
 
 private int gmcp_task_number(mixed value)
@@ -2819,6 +3598,11 @@ private void gmcp_reset_session_state()
     gmcp_room_ids = ([]);
     gmcp_room_session = 0;
     gmcp_room_sequence = 0;
+    gmcp_map_exit_records = ([]);
+    gmcp_map_exit_session = 0;
+    gmcp_map_exit_sequence = 0;
+    gmcp_map_revision = 0;
+    gmcp_map_fingerprint = 0;
     gmcp_item_ids = ([]);
     gmcp_item_session = 0;
     gmcp_item_sequence = 0;
@@ -2886,6 +3670,7 @@ private void gmcp_enable()
             "Char.Vitals"    : 1,
             "Char.Status"    : GMCP_STATE_VERSION,
             "Room.Info"      : 1,
+            "Room.Map"       : GMCP_MAP_VERSION,
             "Room.Entities"  : GMCP_ENTITIES_VERSION,
             "Char.Inventory" : GMCP_ITEMS_VERSION,
             "Char.Equipment": GMCP_ITEMS_VERSION,
@@ -3987,22 +4772,22 @@ void gmcp(string req)
     }
     else if (package == "Room.Info.Get")
     {
-        object ob = environment(this_object());
+        object ob;
         string room_id;
         mapping room_info;
 
+        ob = environment(this_object());
         if (!objectp(ob))
             return;
 
         room_id = query_gmcp_room_id(ob);
-        room_info = ([
-            "name"    : remove_ansi(ob->query("short") || ob->query("name") || ""),
-            "exits"   : keys(ob->query("exits") || ([])),
-            "area"    : ob->query("outdoors") || explode(base_name(ob), "/")[1],
-            "room_id" : room_id,
-            // 兼容已经读取 hash 字段的客户端；值不再依赖 crypto efun。
-            "hash"    : room_id,
-        ]);
+        room_info = gmcp_map_room_record(ob, 0, 0, 0);
+        if (!mapp(room_info))
+            return;
+        room_info["exits"] = gmcp_map_room_commands(ob);
+        room_info["room_id"] = room_id;
+        // 兼容已经读取 hash 字段的客户端；值不再依赖 crypto efun。
+        room_info["hash"] = room_id;
         sendGMCP(room_info, "Room", "Info");
         // 音效示例
         if (room_info["name"] == "树林")
@@ -4013,6 +4798,10 @@ void gmcp(string req)
         {
             msp_oob("!!SOUND(Off)");
         }
+    }
+    else if (package == "Room.Map.Get")
+    {
+        gmcp_refresh_room_map(1);
     }
     else if (package == "Room.Entities.Get")
     {
@@ -4077,5 +4866,9 @@ void gmcp(string req)
     else if (package == "Web.Chat.Send")
     {
         gmcp_handle_web_chat_send(payload);
+    }
+    else if (package == "Web.Room.Move")
+    {
+        gmcp_handle_web_room_move(payload);
     }
 }

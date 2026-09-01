@@ -488,6 +488,12 @@ int do_area_move(object me, object env, string dir)
     obs = env->query_inventory(x, y);
     obs->follow_me(me, dir);
 
+    if (objectp(me) && interactive(me) && objectp(new_env))
+    {
+        me->gmcp("Room.Info.Get");
+        me->gmcp("Room.Map.Get");
+    }
+
     return 1;
 }
 

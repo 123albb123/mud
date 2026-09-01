@@ -3,6 +3,7 @@ import { ChatPanel } from '../features/chat/ChatPanel';
 import { CombatPanel } from '../features/combat/CombatPanel';
 import { EquipmentPanel } from '../features/equipment/EquipmentPanel';
 import { InventoryPanel } from '../features/inventory/InventoryPanel';
+import { MapView } from '../features/map/MapView';
 import { QuestPanel } from '../features/quests/QuestPanel';
 import { RoomEntities } from '../features/room/RoomEntities';
 import { RoomPanel } from '../features/room/RoomPanel';
@@ -97,18 +98,11 @@ const DockNav = ({ activeView, onNavigate, questCount, messageCount }: { activeV
     );
 };
 
-const MapView = () => (
-    <main className="page-main"><div className="page-surface map-surface">
-        <PageHeading description="真实地图功能将在后续接入。" icon="map" title="地图" action={<span className="map-status map-status-muted">开发中</span>} />
-        <div className="map-board"><div className="map-grid-lines" /><div className="map-water water-one" /><div className="map-water water-two" /><div className="map-mountain mountain-one"><Icon name="mountain" size={52} /></div><div className="map-mountain mountain-two"><Icon name="mountain" size={38} /></div><div className="map-placeholder"><div className="map-placeholder-icon"><Icon name="map" size={36} /></div><strong>暂无地图数据</strong><span>真实地图数据尚未接入</span><em>开发中</em></div><div className="map-compass"><Icon name="compass" size={42} /><span>北</span></div></div>
-    </div></main>
-);
-
 const HelpView = () => (
     <main className="page-main"><div className="page-surface help-surface">
         <PageHeading description="查看客户端操作与命令说明。" icon="help" title="帮助" />
         <div className="help-grid">
-            <article className="help-card"><div className="help-card-icon"><Icon name="arrow" size={21} /></div><div><h2>方向移动</h2><p>使用北、南、东、西或键盘方向键，探索当前房间的真实出口。</p><div className="shortcut-row"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>快速行走</span></div></div></article>
+            <article className="help-card"><div className="help-card-icon"><Icon name="arrow" size={21} /></div><div><h2>方向移动</h2><p>点击房间出口或输入原版移动命令 north/south/east/west。</p><div className="command-example">north <span>向北移动</span></div></div></article>
             <article className="help-card"><div className="help-card-icon"><Icon name="sword" size={21} /></div><div><h2>江湖命令</h2><p>在底部命令栏输入原版 MUD 命令，按 Enter 发送。</p><div className="command-example">look <span>查看周围</span></div></div></article>
             <article className="help-card"><div className="help-card-icon"><Icon name="book" size={21} /></div><div><h2>武学与装备</h2><p>在武学页启用、准备招式；在行囊和装备页管理服务器返回的物品。</p><div className="help-tags"><span>启用</span><span>准备</span><span>装备</span></div></div></article>
             <article className="help-card"><div className="help-card-icon"><Icon name="message" size={21} /></div><div><h2>消息往来</h2><p>支持频道、说话、私聊与回复。可用能力由服务器实时同步。</p><div className="help-tags"><span>频道</span><span>私聊</span><span>回复</span></div></div></article>
@@ -148,7 +142,7 @@ export const App = () => {
 
     let page: ReactNode;
     if (activeView === 'map') {
-        page = <MapView />;
+        page = <MapView connected={connected} onMove={client.sendRoomMove} snapshot={client.roomMap} />;
     } else if (activeView === 'help') {
         page = <HelpView />;
     } else if (activeView === 'inventory') {
@@ -179,7 +173,7 @@ export const App = () => {
             {activeView === 'jianghu' ? <main className="game-main">
                 <aside className="left-rail"><PlayerCard connected={connected} status={client.status} vitals={client.vitals} /><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /><div className="rail-tip"><Icon name="spark" size={17} /><span>所有状态会随服务器快照实时更新</span></div></aside>
                 <section className="center-stage"><div className="scene-panel surface-card"><div className="scene-topline"><span><Icon name="mountain" size={16} />{roomArea}</span><span className="scene-status"><i />{connected ? '实时同步' : '等待连接'}</span></div><div className="scene-title-row"><h1>{roomTitle}</h1></div>{!client.room && <div className="scene-empty-state"><Icon name="mountain" size={20} /><span>{connected ? '当前没有房间信息' : '连接江湖后显示房间、出口与周围人物'}</span></div>}<Terminal connected={connected} segments={client.segments} /><CommandBar connected={connected} onSend={client.sendCommand} serverSensitive={client.serverSensitive} /></div></section>
-                <aside className="right-rail"><RoomPanel connected={connected} disabled={!connected} onMove={client.sendCommand} room={client.room} /><RoomEntities connected={connected} disabled={!connected} entities={client.entities} inventory={client.inventory} onAction={client.sendEntityAction} onGive={client.sendEntityGive} /></aside>
+                <aside className="right-rail"><RoomPanel connected={connected} disabled={!connected} onMove={client.sendRoomMove} room={client.room} roomMap={client.roomMap} /><RoomEntities connected={connected} disabled={!connected} entities={client.entities} inventory={client.inventory} onAction={client.sendEntityAction} onGive={client.sendEntityGive} /></aside>
                 <section className="mobile-combat"><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /></section>
             </main> : page}
 

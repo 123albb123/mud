@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CharacterStatus, CharacterVitals, ChatMessage, QuestListSnapshot, RoomInfo } from '../protocol/gmcp/gmcp';
+import type { CharacterStatus, CharacterVitals, ChatMessage, QuestListSnapshot, RoomInfo, RoomMapSnapshot } from '../protocol/gmcp/gmcp';
 import { useMudClient } from '../stores/useMudClient';
 import { App } from './App';
 
@@ -21,6 +21,7 @@ const makeClient = (overrides: Partial<ClientState> = {}): ClientState => ({
     skills: [],
     combatActions: [],
     room: null,
+    roomMap: null,
     entities: [],
     inventory: [],
     equipment: [],
@@ -34,6 +35,7 @@ const makeClient = (overrides: Partial<ClientState> = {}): ClientState => ({
     connect: vi.fn(),
     disconnect: vi.fn(),
     sendCommand: vi.fn(),
+    sendRoomMove: vi.fn(),
     sendItemAction: vi.fn(),
     sendEntityAction: vi.fn(),
     sendEntityGive: vi.fn(),
@@ -80,6 +82,25 @@ const roomFixture: RoomInfo = {
     exits: [],
     room_id: 'room-session-1',
     hash: 'hash-session-1',
+};
+
+const roomMapFixture: RoomMapSnapshot = {
+    version: 1,
+    snapshot: true,
+    revision: 1,
+    sequence: 1,
+    current_room_id: 'room-session-1',
+    room: { room_id: 'room-session-1', name: '真实房间', area: '真实区域' },
+    exits: [{
+        exit_id: 'x-session-1',
+        command: 'east',
+        label: '东',
+        kind: 'direction',
+        resolved: true,
+        dynamic: false,
+        destination_room_id: 'room-session-2',
+        destination_name: '真实东侧',
+    }],
 };
 
 const questFixture: QuestListSnapshot = {
@@ -133,7 +154,8 @@ describe('App', () => {
         expect(document.querySelector('.desktop-equipment')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
-        expect(screen.getByText('真实地图数据尚未接入')).toBeInTheDocument();
+        expect(screen.getByText('连接服务器后显示当前房间地图。')).toBeInTheDocument();
+        expect(screen.queryByText('真实地图数据尚未接入')).not.toBeInTheDocument();
         expect(sendCommand).not.toHaveBeenCalled();
         expect(screen.queryByRole('button', { name: '北' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: '南' })).not.toBeInTheDocument();
@@ -161,6 +183,7 @@ describe('App', () => {
             vitals: vitalsFixture,
             status: statusFixture,
             room: roomFixture,
+            roomMap: roomMapFixture,
             quests: questFixture,
             chatMessages: [messageFixture],
         }));
@@ -177,6 +200,24 @@ describe('App', () => {
         expect(screen.queryByText('28ms')).not.toBeInTheDocument();
         expect(document.querySelector('.dock-quests .nav-badge')).toHaveTextContent('1');
         expect(document.querySelector('.dock-chat .nav-badge')).toHaveTextContent('1');
+    });
+
+    it('uses the opaque map exit token for map movement', () => {
+        const sendRoomMove = vi.fn();
+        const sendCommand = vi.fn();
+        vi.mocked(useMudClient).mockReturnValue(makeClient({
+            connectionState: 'connected',
+            room: roomFixture,
+            roomMap: roomMapFixture,
+            sendCommand,
+            sendRoomMove,
+        }));
+        render(<App />);
+
+        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /东真实东侧/ }));
+        expect(sendRoomMove).toHaveBeenCalledWith('x-session-1');
+        expect(sendCommand).not.toHaveBeenCalled();
     });
 
     it('keeps page titles singular and removes decorative English eyebrows', () => {

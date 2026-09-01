@@ -23,6 +23,8 @@ import {
     toWebSkillActionRequest,
     toQuestListSnapshot,
     toSkillsSnapshot,
+    toRoomMapSnapshot,
+    toWebRoomMoveRequest,
 } from './gmcp';
 
 const encode = (value: string) => new TextEncoder().encode(value);
@@ -66,6 +68,82 @@ describe('GMCP codec', () => {
         });
     });
 
+    it('accepts only bounded opaque Room.Map snapshots and preserves dynamic exits', () => {
+        const snapshot = toRoomMapSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 4,
+            sequence: 4,
+            current_room_id: 'r-session-0001',
+            room: { room_id: 'r-session-0001', name: '客店', area: '扬州' },
+            exits: [
+                {
+                    exit_id: 'x-session-0001',
+                    command: 'east',
+                    label: '东',
+                    kind: 'direction',
+                    resolved: 1,
+                    dynamic: 0,
+                    destination_room_id: 'r-session-0002',
+                    destination_name: '东街',
+                },
+                {
+                    exit_id: 'x-session-0002',
+                    command: 'enter',
+                    label: '进入',
+                    kind: 'portal',
+                    resolved: 0,
+                    dynamic: 1,
+                },
+                {
+                    exit_id: '/clone/room#1',
+                    command: 'bad',
+                    label: '坏出口',
+                    kind: 'special',
+                    resolved: 1,
+                    dynamic: 0,
+                    destination_room_id: '/clone/room#2',
+                },
+                {
+                    exit_id: 'x-session-0003',
+                    command: 'bad/path',
+                    label: '坏路径',
+                    kind: 'special',
+                    resolved: 1,
+                    dynamic: 0,
+                    destination_room_id: 'r-session-0003',
+                },
+            ],
+        });
+
+        expect(snapshot).toMatchObject({
+            current_room_id: 'r-session-0001',
+            room: { name: '客店' },
+            revision: 4,
+            exits: [
+                { exit_id: 'x-session-0001', resolved: true, dynamic: false },
+                { exit_id: 'x-session-0002', resolved: false, dynamic: true },
+            ],
+        });
+        expect(snapshot?.exits).toHaveLength(2);
+        expect(toRoomMapSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 1.5,
+            sequence: 1.5,
+            current_room_id: 'r-session-0001',
+            room: { room_id: 'r-session-0001', name: '客店' },
+            exits: [],
+        })).toBeNull();
+    });
+
+    it('builds Web.Room.Move from only a syntactically opaque exit token', () => {
+        expect(toWebRoomMoveRequest('x-session-0001')).toEqual({ exit_id: 'x-session-0001' });
+        expect(toWebRoomMoveRequest('east')).toBeNull();
+        expect(toWebRoomMoveRequest('/d/city/room')).toBeNull();
+        expect(toWebRoomMoveRequest('x-session-0001\nlook')).toBeNull();
+    });
+
     it('uses client-directed Core.Hello and standard Core.Supports.Set strings', () => {
         expect(GMCP_CLIENT_HELLO).toEqual({
             client: 'Yanhuang Web',
@@ -75,6 +153,7 @@ describe('GMCP codec', () => {
             'Char.Vitals 1',
             'Char.Status 1',
             'Room.Info 1',
+            'Room.Map 1',
             'Room.Entities 1',
             'Char.Inventory 1',
             'Char.Equipment 1',
@@ -90,6 +169,7 @@ describe('GMCP codec', () => {
             'Char.Vitals.Get',
             'Char.Status.Get',
             'Room.Info.Get',
+            'Room.Map.Get',
             'Room.Entities.Get',
             'Char.Inventory.Get',
             'Char.Equipment.Get',

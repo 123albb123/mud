@@ -18,6 +18,8 @@ import {
     toEquipmentSnapshot,
     toInventorySnapshot,
     toRoomInfo,
+    toRoomMapSnapshot,
+    toWebRoomMoveRequest,
     toSkillsSnapshot,
     toQuestListSnapshot,
     toChatCapabilitiesSnapshot,
@@ -38,6 +40,7 @@ import {
     type InventoryItem,
     type RoomEntity,
     type RoomInfo,
+    type RoomMapSnapshot,
     type QuestListSnapshot,
 } from '../protocol/gmcp/gmcp';
 import { TelnetParser } from '../protocol/telnet/TelnetParser';
@@ -65,6 +68,7 @@ export const useMudClient = () => {
     const [skills, setSkills] = useState<CharacterSkill[]>([]);
     const [combatActions, setCombatActions] = useState<CombatAction[]>([]);
     const [room, setRoom] = useState<RoomInfo | null>(null);
+    const [roomMap, setRoomMap] = useState<RoomMapSnapshot | null>(null);
     const [entities, setEntities] = useState<RoomEntity[]>([]);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [equipment, setEquipment] = useState<EquipmentSlot[]>([]);
@@ -88,6 +92,8 @@ export const useMudClient = () => {
     const combatRevisionRef = useRef(-1);
     const skillsRevisionRef = useRef(-1);
     const combatActionsRevisionRef = useRef(-1);
+    const roomMapRevisionRef = useRef(-1);
+    const roomMapSequenceRef = useRef(-1);
     const questsRevisionRef = useRef(-1);
     const chatCapabilitiesRevisionRef = useRef(-1);
     const chatTargetsRevisionRef = useRef(-1);
@@ -170,6 +176,18 @@ export const useMudClient = () => {
             if (nextRoom) {
                 setRoom(nextRoom);
             }
+        } else if (message.packageName === 'Room.Map') {
+            const nextRoomMap = toRoomMapSnapshot(message.payload);
+            const isNewerRoomMap = nextRoomMap && (
+                nextRoomMap.revision > roomMapRevisionRef.current ||
+                (nextRoomMap.revision === roomMapRevisionRef.current &&
+                    nextRoomMap.sequence >= roomMapSequenceRef.current)
+            );
+            if (nextRoomMap && isNewerRoomMap) {
+                roomMapRevisionRef.current = nextRoomMap.revision;
+                roomMapSequenceRef.current = nextRoomMap.sequence;
+                setRoomMap(nextRoomMap);
+            }
         } else if (message.packageName === 'Room.Entities') {
             const nextEntities = toRoomEntitiesSnapshot(message.payload);
             if (nextEntities && nextEntities.revision >= entitiesRevisionRef.current) {
@@ -251,6 +269,8 @@ export const useMudClient = () => {
                     combatRevisionRef.current = -1;
                     skillsRevisionRef.current = -1;
                     combatActionsRevisionRef.current = -1;
+                    roomMapRevisionRef.current = -1;
+                    roomMapSequenceRef.current = -1;
                     questsRevisionRef.current = -1;
                     chatCapabilitiesRevisionRef.current = -1;
                     chatTargetsRevisionRef.current = -1;
@@ -262,6 +282,7 @@ export const useMudClient = () => {
                     setSkills([]);
                     setCombatActions([]);
                     setRoom(null);
+                    setRoomMap(null);
                     setEntities([]);
                     setInventory([]);
                     setEquipment([]);
@@ -278,10 +299,13 @@ export const useMudClient = () => {
                     setSkills([]);
                     setCombatActions([]);
                     setRoom(null);
+                    setRoomMap(null);
                     setEntities([]);
                     setInventory([]);
                     setEquipment([]);
                     setEquipmentSlotOrder([]);
+                    roomMapRevisionRef.current = -1;
+                    roomMapSequenceRef.current = -1;
                     questsRevisionRef.current = -1;
                     chatCapabilitiesRevisionRef.current = -1;
                     chatTargetsRevisionRef.current = -1;
@@ -325,6 +349,7 @@ export const useMudClient = () => {
         setSkills([]);
         setCombatActions([]);
         setRoom(null);
+        setRoomMap(null);
         setEntities([]);
         setInventory([]);
         setEquipment([]);
@@ -341,6 +366,8 @@ export const useMudClient = () => {
         combatRevisionRef.current = -1;
         skillsRevisionRef.current = -1;
         combatActionsRevisionRef.current = -1;
+        roomMapRevisionRef.current = -1;
+        roomMapSequenceRef.current = -1;
         questsRevisionRef.current = -1;
         chatCapabilitiesRevisionRef.current = -1;
         chatTargetsRevisionRef.current = -1;
@@ -358,6 +385,15 @@ export const useMudClient = () => {
             return;
         }
         connectionRef.current?.sendBytes(parser.encodeText(`${command}\n`));
+    }, []);
+
+    const sendRoomMove = useCallback((exitId: string) => {
+        const parser = parserRef.current;
+        const request = toWebRoomMoveRequest(exitId);
+        if (!parser || !request) {
+            return;
+        }
+        parser.sendGMCP('Web.Room.Move', request);
     }, []);
 
     const sendItemAction = useCallback((itemId: string, action: string) => {
@@ -432,6 +468,7 @@ export const useMudClient = () => {
         skills,
         combatActions,
         room,
+        roomMap,
         entities,
         inventory,
         equipment,
@@ -445,6 +482,7 @@ export const useMudClient = () => {
         connect,
         disconnect,
         sendCommand,
+        sendRoomMove,
         sendItemAction,
         sendEntityAction,
         sendEntityGive,

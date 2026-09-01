@@ -126,6 +126,36 @@ export interface RoomInfo {
     hash?: string;
 }
 
+export type RoomMapExitKind = 'direction' | 'vertical' | 'portal' | 'special';
+
+export interface RoomMapRoom {
+    room_id: string;
+    name: string;
+    area?: string;
+}
+
+export interface RoomMapExit {
+    exit_id: string;
+    command: string;
+    label: string;
+    kind: RoomMapExitKind;
+    resolved: boolean;
+    dynamic: boolean;
+    conditional?: boolean;
+    destination_room_id?: string;
+    destination_name?: string;
+}
+
+export interface RoomMapSnapshot {
+    version: 1;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    current_room_id: string;
+    room: RoomMapRoom;
+    exits: RoomMapExit[];
+}
+
 export interface GMCPAction {
     id: string;
     label?: string;
@@ -288,6 +318,10 @@ export type WebChatSendRequest =
     | { kind: 'tell'; target_entity_id: string; text: string }
     | { kind: 'channel'; channel: string; text: string; emote?: boolean };
 
+export interface WebRoomMoveRequest {
+    exit_id: string;
+}
+
 const decoder = new TextDecoder('utf-8');
 
 export const GMCP_CLIENT_HELLO = {
@@ -299,6 +333,7 @@ export const GMCP_SUPPORTS = [
     'Char.Vitals 1',
     'Char.Status 1',
     'Room.Info 1',
+    'Room.Map 1',
     'Room.Entities 1',
     'Char.Inventory 1',
     'Char.Equipment 1',
@@ -315,6 +350,7 @@ export const GMCP_INITIAL_GETS = [
     'Char.Vitals.Get',
     'Char.Status.Get',
     'Room.Info.Get',
+    'Room.Map.Get',
     'Room.Entities.Get',
     'Char.Inventory.Get',
     'Char.Equipment.Get',
@@ -335,6 +371,8 @@ const entityActions = new Set([
 const itemIdPattern = /^i-[A-Za-z0-9]+-[0-9]+$/;
 const entityIdPattern = /^e-[A-Za-z0-9]+-[0-9]+$/;
 const questIdPattern = /^q-[A-Za-z0-9]+-[0-9]+$/;
+const roomMapRoomIdPattern = /^[A-Za-z0-9_-]{1,96}$/;
+const roomMapExitIdPattern = /^x-[A-Za-z0-9]+-[0-9]+$/;
 const chatMessageIdPattern = /^m-[A-Za-z0-9]+-[0-9]+$/;
 const chatPlayerIdPattern = /^p-[A-Za-z0-9]+-[0-9]+$/;
 const chatChannelPattern = /^[a-z0-9_-]{1,32}$/;
@@ -369,6 +407,13 @@ export interface WebItemActionRequest {
     item_id: string;
     action: string;
 }
+
+export const toWebRoomMoveRequest = (exitId: string): WebRoomMoveRequest | null => {
+    if (!roomMapExitIdPattern.test(exitId)) {
+        return null;
+    }
+    return { exit_id: exitId };
+};
 
 export const toWebItemActionRequest = (
     itemId: string,
@@ -597,6 +642,130 @@ const safeDisplayText = (
         return null;
     }
     return value;
+};
+
+const toRoomMapRoom = (value: unknown): RoomMapRoom | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const roomId = typeof data.room_id === 'string' && roomMapRoomIdPattern.test(data.room_id)
+        ? data.room_id
+        : null;
+    const name = safeDisplayText(data.name, 160, false, false);
+    if (!roomId || name === null) {
+        return null;
+    }
+    const room: RoomMapRoom = { room_id: roomId, name };
+    if (data.area !== undefined) {
+        const area = safeDisplayText(data.area, 160);
+        if (area === null) {
+            return null;
+        }
+        room.area = area;
+    }
+    return room;
+};
+
+const roomMapExitKinds = new Set<RoomMapExitKind>([
+    'direction', 'vertical', 'portal', 'special',
+]);
+
+const toRoomMapExit = (value: unknown): RoomMapExit | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const exitId = typeof data.exit_id === 'string' && roomMapExitIdPattern.test(data.exit_id)
+        ? data.exit_id
+        : null;
+    const command = safeDisplayText(data.command, 96);
+    const label = safeDisplayText(data.label, 160);
+    const kind = typeof data.kind === 'string' && roomMapExitKinds.has(data.kind as RoomMapExitKind)
+        ? data.kind as RoomMapExitKind
+        : null;
+    const resolved = booleanFlag(data.resolved);
+    const dynamic = booleanFlag(data.dynamic);
+    if (!exitId || !command || command.includes('/') || command.includes('\\') ||
+        !label || !kind || resolved === undefined || dynamic === undefined ||
+        (resolved && dynamic)) {
+        return null;
+    }
+
+    const exit: RoomMapExit = {
+        exit_id: exitId,
+        command,
+        label,
+        kind,
+        resolved,
+        dynamic,
+    };
+    if (data.conditional !== undefined) {
+        const conditional = booleanFlag(data.conditional);
+        if (conditional === undefined) {
+            return null;
+        }
+        exit.conditional = conditional;
+    }
+    if (data.destination_room_id !== undefined) {
+        if (typeof data.destination_room_id !== 'string' ||
+            !roomMapRoomIdPattern.test(data.destination_room_id)) {
+            return null;
+        }
+        exit.destination_room_id = data.destination_room_id;
+    }
+    if (data.destination_name !== undefined) {
+        const destinationName = safeDisplayText(data.destination_name, 160);
+        if (destinationName === null) {
+            return null;
+        }
+        exit.destination_name = destinationName;
+    }
+    if (exit.resolved && !exit.destination_room_id) {
+        return null;
+    }
+    return exit;
+};
+
+export const toRoomMapSnapshot = (payload: unknown): RoomMapSnapshot | null => {
+    const data = snapshotHeader(payload);
+    if (!data) {
+        return null;
+    }
+    const revision = finiteNumber(data.revision);
+    const sequence = finiteNumber(data.sequence);
+    const currentRoomId = typeof data.current_room_id === 'string' &&
+        roomMapRoomIdPattern.test(data.current_room_id)
+        ? data.current_room_id
+        : null;
+    const room = toRoomMapRoom(data.room);
+    if (revision === undefined || sequence === undefined ||
+        !Number.isInteger(revision) || !Number.isInteger(sequence) ||
+        revision < 0 || sequence < 0 || !currentRoomId || !room ||
+        room.room_id !== currentRoomId || !Array.isArray(data.exits)) {
+        return null;
+    }
+
+    const seen = new Set<string>();
+    const exits = data.exits
+        .slice(0, 64)
+        .map(toRoomMapExit)
+        .filter((exit): exit is RoomMapExit => {
+            if (!exit || seen.has(exit.exit_id)) {
+                return false;
+            }
+            seen.add(exit.exit_id);
+            return true;
+        });
+    return {
+        version: 1,
+        snapshot: true,
+        revision,
+        sequence,
+        current_room_id: currentRoomId,
+        room,
+        exits,
+    };
 };
 
 const nonNegativeInteger = (value: unknown, max = 1_000_000_000): number | undefined => {
