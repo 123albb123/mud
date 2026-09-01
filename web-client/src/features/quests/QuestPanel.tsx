@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { QuestListSnapshot, QuestRecord } from '../../protocol/gmcp/gmcp';
 
 interface QuestPanelProps {
+    connected?: boolean;
     snapshot: QuestListSnapshot | null;
 }
 
@@ -80,7 +81,7 @@ const QuestGroup = ({ title, records }: { title: string; records: QuestRecord[] 
     </section>
 );
 
-export const QuestPanel = ({ snapshot }: QuestPanelProps) => {
+export const QuestPanel = ({ connected = true, snapshot }: QuestPanelProps) => {
     if (!snapshot) {
         return (
             <section className="feature-panel quest-panel" aria-labelledby="quest-title">
@@ -90,7 +91,7 @@ export const QuestPanel = ({ snapshot }: QuestPanelProps) => {
                         <h2 id="quest-title">任务志</h2>
                     </div>
                 </div>
-                <p className="feature-empty-state">尚未收到任务快照。</p>
+                <p className="feature-empty-state">{connected ? '当前没有任务' : '连接江湖后查看任务'}</p>
             </section>
         );
     }

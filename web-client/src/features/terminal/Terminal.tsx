@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { AnsiSegment } from '../../protocol/ansi/AnsiParser';
 
 interface TerminalProps {
+    connected?: boolean;
     segments: AnsiSegment[];
 }
 
-export const Terminal = ({ segments }: TerminalProps) => {
+export const Terminal = ({ connected = true, segments }: TerminalProps) => {
     const terminalRef = useRef<HTMLDivElement>(null);
     const [following, setFollowing] = useState(true);
 
@@ -35,7 +36,7 @@ export const Terminal = ({ segments }: TerminalProps) => {
     return (
         <section className="terminal-wrap" aria-label="炎黄文字终端">
             <div className="terminal" onScroll={handleScroll} ref={terminalRef} role="log" aria-live="polite">
-                {segments.map((segment, index) => (
+                {segments.length === 0 ? <p className="terminal-empty-state">{connected ? '等待服务器文字输出。' : '连接江湖后显示原版文字。'}</p> : segments.map((segment, index) => (
                     <span
                         className={[
                             segment.bold ? 'ansi-bold' : '',

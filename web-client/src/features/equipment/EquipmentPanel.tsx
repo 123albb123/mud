@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentSlot, GMCPAction } from '../../protocol/gmcp/gmcp';
 
 interface EquipmentPanelProps {
+    connected?: boolean;
     slots: EquipmentSlot[];
     slotOrder: string[];
     onAction: (itemId: string, action: string) => void;
@@ -34,9 +35,10 @@ const actionLabels: Record<string, string> = {
 
 const actionLabel = (action: GMCPAction): string => action.label || actionLabels[action.id] || action.id;
 
-export const EquipmentPanel = ({ slots, slotOrder, onAction }: EquipmentPanelProps) => {
+export const EquipmentPanel = ({ connected = true, slots, slotOrder, onAction }: EquipmentPanelProps) => {
     const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
     const slotMap = useMemo(() => new Map(slots.map((slot) => [slot.slot, slot])), [slots]);
+    const occupiedSlotCount = slots.filter((slot) => Boolean(slot.item_id)).length;
     const selectedItem = selectedSlot ? slotMap.get(selectedSlot) ?? null : null;
 
     useEffect(() => {
@@ -52,10 +54,10 @@ export const EquipmentPanel = ({ slots, slotOrder, onAction }: EquipmentPanelPro
                     <p className="eyebrow">CHAR · EQUIPMENT</p>
                     <h2 id="equipment-title">装备</h2>
                 </div>
-                <span className="item-count">{slots.length} 格已用</span>
+                <span className="item-count">{connected ? occupiedSlotCount + ' 格已用' : '未连接'}</span>
             </div>
             {slotOrder.length === 0 ? (
-                <p className="empty-item-state">尚未收到装备快照。</p>
+                <p className="empty-item-state">{connected ? '暂无装备数据' : '连接江湖后查看装备'}</p>
             ) : (
                 <div className="equipment-grid">
                     {slotOrder.map((slotName) => {

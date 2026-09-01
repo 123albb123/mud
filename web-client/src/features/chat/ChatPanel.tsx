@@ -118,7 +118,7 @@ export const ChatPanel = ({ capabilities, connected, targets, messages, onSend }
                 ref={feedRef}
             >
                 {messages.length === 0
-                    ? <p className="feature-empty-state">尚未收到结构化聊天消息。</p>
+                    ? <p className="feature-empty-state">{connected ? '暂无江湖消息' : '连接江湖后查看消息'}</p>
                     : messages.slice(-300).map((message) => (
                         <article className={`chat-message ${message.direction}`} key={message.message_id}>
                             <div className="chat-message-meta">
@@ -185,7 +185,7 @@ export const ChatPanel = ({ capabilities, connected, targets, messages, onSend }
                         >
                             {visiblePlayers.length === 0 && (
                                 <option value="">
-                                    {players.length === 0 ? '当前没有在线玩家' : '没有匹配的在线玩家'}
+                                    {players.length === 0 ? '当前没有可私聊玩家' : '没有匹配的在线玩家'}
                                 </option>
                             )}
                             {visiblePlayers.map((player) => (

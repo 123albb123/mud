@@ -56,7 +56,7 @@ describe('ChatPanel', () => {
         const onSend = vi.fn();
         render(<ChatPanel capabilities={capabilities} connected targets={[]} messages={[]} onSend={onSend} />);
         fireEvent.click(screen.getByRole('tab', { name: '私聊' }));
-        expect(screen.getByRole('option', { name: '当前没有在线玩家' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '当前没有可私聊玩家' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     });
 

@@ -40,6 +40,11 @@ describe('InventoryPanel', () => {
 
     it('renders an empty snapshot without inventing an item', () => {
         render(<InventoryPanel items={[]} onAction={() => undefined} />);
-        expect(screen.getByText('背包为空，或尚未收到服务器快照。')).toBeInTheDocument();
+        expect(screen.getByText('行囊中暂无物品')).toBeInTheDocument();
+    });
+
+    it('explains that a disconnected client has no inventory snapshot', () => {
+        render(<InventoryPanel connected={false} items={[]} onAction={() => undefined} />);
+        expect(screen.getByText('连接江湖后查看行囊')).toBeInTheDocument();
     });
 });

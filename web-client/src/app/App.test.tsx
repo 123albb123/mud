@@ -1,0 +1,174 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CharacterStatus, CharacterVitals, ChatMessage, QuestListSnapshot, RoomInfo } from '../protocol/gmcp/gmcp';
+import { useMudClient } from '../stores/useMudClient';
+import { App } from './App';
+
+vi.mock('../stores/useMudClient', () => ({
+    defaultMudUrl: vi.fn(() => 'ws://test.invalid:8888'),
+    useMudClient: vi.fn(),
+}));
+
+type ClientState = ReturnType<typeof useMudClient>;
+
+const makeClient = (overrides: Partial<ClientState> = {}): ClientState => ({
+    connectionState: 'closed',
+    connectionDetail: '',
+    segments: [],
+    vitals: null,
+    status: null,
+    combat: null,
+    skills: [],
+    combatActions: [],
+    room: null,
+    entities: [],
+    inventory: [],
+    equipment: [],
+    equipmentSlotOrder: [],
+    quests: null,
+    chatCapabilities: null,
+    chatTargets: [],
+    chatMessages: [],
+    serverSensitive: false,
+    debugEntries: [],
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    sendCommand: vi.fn(),
+    sendItemAction: vi.fn(),
+    sendEntityAction: vi.fn(),
+    sendEntityGive: vi.fn(),
+    sendSkillAction: vi.fn(),
+    sendCombatAction: vi.fn(),
+    sendChat: vi.fn(),
+    ...overrides,
+});
+
+const statusFixture: CharacterStatus = {
+    version: 1,
+    snapshot: true,
+    revision: 1,
+    sequence: 1,
+    busy: false,
+    fighting: false,
+    can_act: true,
+    ghost: false,
+    unconscious: false,
+    anger: 0,
+    food: 0,
+    water: 0,
+    exp: 500000,
+    potential: 1250,
+    weapon: null,
+    enabled: [],
+    prepared: [],
+};
+
+const vitalsFixture: CharacterVitals = {
+    hp: 100,
+    max_hp: 120,
+    jing: 30,
+    max_jing: 40,
+    jingli: 50,
+    max_jingli: 60,
+    neili: 70,
+    max_neili: 80,
+};
+
+const roomFixture: RoomInfo = {
+    name: '真实房间',
+    area: '真实区域',
+    exits: [],
+    room_id: 'room-session-1',
+    hash: 'hash-session-1',
+};
+
+const questFixture: QuestListSnapshot = {
+    version: 1,
+    snapshot: true,
+    revision: 1,
+    sequence: 1,
+    quests: [{
+        quest_id: 'q-session-1',
+        system: 'traditional',
+        category: 'session',
+        title: '真实任务',
+        detail: '真实任务数据',
+        status: 'active',
+        objectives: [],
+    }],
+    completed: [],
+    stats: {},
+};
+
+const messageFixture: ChatMessage = {
+    version: 1,
+    message_id: 'm-session-1',
+    timestamp: 1,
+    kind: 'say',
+    direction: 'in',
+    sender: { name: '真实玩家', id: 'p-session-1' },
+    text: '真实消息',
+};
+
+describe('App', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('keeps disconnected views empty and preserves the five-item mobile navigation', () => {
+        const sendCommand = vi.fn();
+        vi.mocked(useMudClient).mockReturnValue(makeClient({ sendCommand }));
+        render(<App />);
+
+        expect(screen.getAllByText('尚未连接江湖').length).toBeGreaterThan(0);
+        expect(screen.getByText('连接江湖后显示原版文字。')).toBeInTheDocument();
+        expect(screen.queryByText('江湖游侠')).not.toBeInTheDocument();
+        expect(screen.queryByText('48级')).not.toBeInTheDocument();
+        expect(screen.queryByText('侠义')).not.toBeInTheDocument();
+        expect(screen.queryByText('悦来客栈')).not.toBeInTheDocument();
+        expect(screen.queryByText('安全区')).not.toBeInTheDocument();
+        expect(screen.queryByText('28ms')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        expect(screen.getByText('真实地图数据尚未接入')).toBeInTheDocument();
+        expect(sendCommand).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /^行囊$/ }));
+        expect(screen.getByRole('tab', { name: /^行囊$/ })).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByText('连接江湖后查看行囊')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('tab', { name: /^装备$/ }));
+        expect(screen.getByRole('tab', { name: /^装备$/ })).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByText('连接江湖后查看装备')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^行囊$/ })).toHaveAttribute('aria-current', 'page');
+
+        fireEvent.click(screen.getByRole('button', { name: /^任务$/ }));
+        expect(screen.getByText('连接江湖后查看任务')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /^消息$/ }));
+        expect(screen.getByText('连接江湖后查看消息')).toBeInTheDocument();
+    });
+
+    it('renders protocol fields without inventing level, alignment, room details, or latency', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient({
+            connectionState: 'connected',
+            vitals: vitalsFixture,
+            status: statusFixture,
+            room: roomFixture,
+            quests: questFixture,
+            chatMessages: [messageFixture],
+        }));
+        render(<App />);
+
+        expect(screen.getByText('战斗经验')).toBeInTheDocument();
+        expect(screen.getByText('500,000')).toBeInTheDocument();
+        expect(screen.getByText('潜能')).toBeInTheDocument();
+        expect(screen.queryByText('500000%')).not.toBeInTheDocument();
+        expect(screen.queryByText('48级')).not.toBeInTheDocument();
+        expect(screen.queryByText('侠义')).not.toBeInTheDocument();
+        expect(screen.getAllByText('真实房间').length).toBeGreaterThan(0);
+        expect(screen.queryByText('安全区')).not.toBeInTheDocument();
+        expect(screen.queryByText('28ms')).not.toBeInTheDocument();
+        expect(document.querySelector('.dock-quests .nav-badge')).toHaveTextContent('1');
+        expect(document.querySelector('.dock-chat .nav-badge')).toHaveTextContent('1');
+    });
+});

@@ -1,6 +1,7 @@
 import type { RoomInfo } from '../../protocol/gmcp/gmcp';
 
 interface RoomPanelProps {
+    connected?: boolean;
     room: RoomInfo | null;
     disabled: boolean;
     onMove: (command: string) => void;
@@ -31,7 +32,7 @@ const specialLabels: Record<string, string> = {
     cross: '穿过',
 };
 
-export const RoomPanel = ({ room, disabled, onMove }: RoomPanelProps) => {
+export const RoomPanel = ({ connected = true, room, disabled, onMove }: RoomPanelProps) => {
     const exits = new Set(room?.exits ?? []);
     const standard = new Set<string>([
         ...directions.map(([command]) => command).filter(Boolean),
@@ -44,10 +45,13 @@ export const RoomPanel = ({ room, disabled, onMove }: RoomPanelProps) => {
             <div className="panel-heading">
                 <span className="seal">境</span>
                 <div>
-                    <h2 id="room-title">{room?.name || '当前房间'}</h2>
-                    <p>{room?.area || '尚未收到房间数据'}</p>
+                    <h2 id="room-title">{room?.name || (connected ? '当前房间' : '尚未连接江湖')}</h2>
+                    <p>{room?.area || (connected ? '当前区域未知' : '连接江湖后显示房间区域')}</p>
                 </div>
             </div>
+            {!room ? (
+                <p className="room-empty-state">{connected ? '当前没有房间信息' : '连接江湖后显示房间'}</p>
+            ) : <>
             <div className="direction-grid" aria-label="方向">
                 {directions.map(([command, label, position]) => command ? (
                     <button
@@ -85,6 +89,7 @@ export const RoomPanel = ({ room, disabled, onMove }: RoomPanelProps) => {
                     </div>
                 </div>
             )}
+            </>}
         </section>
     );
 };

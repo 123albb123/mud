@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { CharacterSkill, CharacterStatus } from '../../protocol/gmcp/gmcp';
 
 interface SkillsPanelProps {
+    connected?: boolean;
     disabled: boolean;
     onAction: (skillId: string, action: 'enable' | 'prepare', slot?: string) => void;
     skills: CharacterSkill[];
@@ -64,7 +65,7 @@ const SkillList = ({ disabled, onAction, selections, setSelection, skills }: Ski
     </div>
 );
 
-export const SkillsPanel = ({ disabled, onAction, skills, status }: SkillsPanelProps) => {
+export const SkillsPanel = ({ connected = true, disabled, onAction, skills, status }: SkillsPanelProps) => {
     const [selections, setSelections] = useState<Record<string, string>>({});
     const basicSkills = skills.filter((skill) => skill.is_basic);
     const specialSkills = skills.filter((skill) => !skill.is_basic);
@@ -85,6 +86,16 @@ export const SkillsPanel = ({ disabled, onAction, skills, status }: SkillsPanelP
     const setSelection = (skillId: string, slot: string) => {
         setSelections((current) => ({ ...current, [skillId]: slot }));
     };
+
+    if (skills.length === 0) {
+        return (
+            <section className="skills-panel" aria-labelledby="skills-title">
+                <div className="skills-summary">
+                    <p id="skills-title">{connected ? '暂无武学数据' : '连接江湖后查看武学'}</p>
+                </div>
+            </section>
+        );
+    }
 
     return (
         <section className="skills-panel" aria-labelledby="skills-title">

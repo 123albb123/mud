@@ -11,6 +11,7 @@ import type {
 interface CombatPanelProps {
     actions: CombatAction[];
     combat: CombatStateSnapshot | null;
+    connected?: boolean;
     disabled: boolean;
     entities: RoomEntity[];
     onAction: (actionId: string, targetEntityId?: string, targetMode?: CombatTargetMode) => void;
@@ -26,7 +27,7 @@ const healthLabels: Record<string, string> = {
     unknown: '状态不明',
 };
 
-export const CombatPanel = ({ actions, combat, disabled, entities, onAction, status }: CombatPanelProps) => {
+export const CombatPanel = ({ actions, combat, connected = true, disabled, entities, onAction, status }: CombatPanelProps) => {
     const targetMode = (action: CombatAction): CombatTargetMode => action.target_mode
         ?? (action.requires_target ? 'required' : 'optional');
     const allowsEntity = (action: CombatAction, type: RoomEntity['type']): type is CombatTargetType => {
@@ -81,7 +82,7 @@ export const CombatPanel = ({ actions, combat, disabled, entities, onAction, sta
                         <span>{primaryTarget.relation === 'kill' ? '生死相搏' : '切磋'} · {healthLabels[primaryTarget.health]}</span>
                     </>
                 ) : (
-                    <span>当前没有战斗目标。</span>
+                    <span>{connected ? '当前没有战斗目标。' : '连接江湖后显示战斗目标。'}</span>
                 )}
             </div>
             {targetActions.length > 0 && (
@@ -136,7 +137,7 @@ export const CombatPanel = ({ actions, combat, disabled, entities, onAction, sta
                 </div>
             )}
             {actions.length === 0 && (
-                <p className="empty-entity-state">当前没有可由服务端确认的战斗动作。</p>
+                <p className="empty-entity-state">{connected ? '当前没有可由服务端确认的战斗动作。' : '连接江湖后显示战斗信息。'}</p>
             )}
         </section>
     );

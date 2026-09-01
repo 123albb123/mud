@@ -58,9 +58,7 @@ export const defaultMudUrl = (): string => {
 export const useMudClient = () => {
     const [connectionState, setConnectionState] = useState<ConnectionState>('closed');
     const [connectionDetail, setConnectionDetail] = useState('');
-    const [segments, setSegments] = useState<AnsiSegment[]>([
-        { text: '连接江湖后，炎黄原版文字会显示在这里。\n', bold: false, foreground: 'bright-black' },
-    ]);
+    const [segments, setSegments] = useState<AnsiSegment[]>([]);
     const [vitals, setVitals] = useState<CharacterVitals | null>(null);
     const [status, setStatus] = useState<CharacterStatus | null>(null);
     const [combat, setCombat] = useState<CombatStateSnapshot | null>(null);
@@ -244,6 +242,7 @@ export const useMudClient = () => {
                     parser.reset();
                     decoderRef.current = new TextDecoder('utf-8');
                     ansiRef.current.reset();
+                    setSegments([]);
                     inventoryRevisionRef.current = -1;
                     equipmentRevisionRef.current = -1;
                     entitiesRevisionRef.current = -1;
@@ -272,6 +271,7 @@ export const useMudClient = () => {
                     setChatTargets([]);
                     setChatMessages([]);
                 } else if (state === 'closed') {
+                    setSegments([]);
                     setVitals(null);
                     setStatus(null);
                     setCombat(null);
@@ -318,6 +318,7 @@ export const useMudClient = () => {
     }, [appendDebug, appendText, handleGMCP, requestGMCPState]);
 
     const connect = useCallback((url: string) => {
+        setSegments([]);
         setVitals(null);
         setStatus(null);
         setCombat(null);

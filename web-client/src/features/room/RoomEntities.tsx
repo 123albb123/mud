@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { InventoryItem, RoomEntity } from '../../protocol/gmcp/gmcp';
 
 interface RoomEntitiesProps {
+    connected?: boolean;
     entities: RoomEntity[];
     inventory: InventoryItem[];
     disabled: boolean;
@@ -29,7 +30,7 @@ const typeLabels: Record<RoomEntity['type'], string> = {
 
 const actionLabel = (action: string): string => actionLabels[action] || action;
 
-export const RoomEntities = ({ entities, inventory, disabled, onAction, onGive }: RoomEntitiesProps) => {
+export const RoomEntities = ({ connected = true, entities, inventory, disabled, onAction, onGive }: RoomEntitiesProps) => {
     const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
     const [message, setMessage] = useState('');
     const [messageAction, setMessageAction] = useState<'ask' | 'talk' | null>(null);
@@ -100,7 +101,7 @@ export const RoomEntities = ({ entities, inventory, disabled, onAction, onGive }
                 <span className="seal">人</span>
                 <div>
                     <h2 id="entity-title">附近与地面</h2>
-                    <p>{entities.length} 个可见实体</p>
+                    <p>{entities.length > 0 ? entities.length + ' 个可见实体' : connected ? '当前没有可见实体' : '连接江湖后显示实体'}</p>
                 </div>
             </div>
             <div className="entity-tabs" role="tablist" aria-label="实体分组">
@@ -125,7 +126,9 @@ export const RoomEntities = ({ entities, inventory, disabled, onAction, onGive }
             </div>
             {visibleEntities.length === 0 ? (
                 <p className="empty-entity-state">
-                    {activeGroup === 'nearby' ? '附近没有可交互的人物。' : '地面没有可拾取的物品。'}
+                    {connected
+                        ? activeGroup === 'nearby' ? '附近没有可交互的人物。' : '地面没有可拾取的物品。'
+                        : activeGroup === 'nearby' ? '连接江湖后显示附近人物。' : '连接江湖后显示地面物品。'}
                 </p>
             ) : (
                 <div className="entity-list" role="tabpanel">
