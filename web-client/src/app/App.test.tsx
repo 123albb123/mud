@@ -128,10 +128,17 @@ describe('App', () => {
         expect(screen.queryByText('悦来客栈')).not.toBeInTheDocument();
         expect(screen.queryByText('安全区')).not.toBeInTheDocument();
         expect(screen.queryByText('28ms')).not.toBeInTheDocument();
+        expect(document.querySelector('.dock-quests .nav-badge')).toBeNull();
+        expect(document.querySelector('.dock-chat .nav-badge')).toBeNull();
+        expect(document.querySelector('.desktop-equipment')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
         expect(screen.getByText('真实地图数据尚未接入')).toBeInTheDocument();
         expect(sendCommand).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: '北' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '南' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '东' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '西' })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /^行囊$/ }));
         expect(screen.getByRole('tab', { name: /^行囊$/ })).toHaveAttribute('aria-selected', 'true');
