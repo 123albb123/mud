@@ -3,18 +3,18 @@ import type {
     ChatCapabilities,
     ChatKind,
     ChatMessage,
-    RoomEntity,
+    ChatTarget,
 } from '../../protocol/gmcp/gmcp';
 
 interface ChatPanelProps {
     capabilities: ChatCapabilities | null;
     connected: boolean;
-    entities: RoomEntity[];
+    targets: ChatTarget[];
     messages: ChatMessage[];
     onSend: (
         kind: ChatKind,
         text: string,
-        options?: { channel?: string; targetEntityId?: string; emote?: boolean },
+        options?: { channel?: string; targetPlayerId?: string; emote?: boolean },
     ) => void;
 }
 
@@ -28,15 +28,16 @@ const kindLabels: Record<ChatKind, string> = {
 const channelName = (capabilities: ChatCapabilities | null, channelId: string): string =>
     capabilities?.channels.find((channel) => channel.id === channelId)?.name ?? channelId;
 
-export const ChatPanel = ({ capabilities, connected, entities, messages, onSend }: ChatPanelProps) => {
+export const ChatPanel = ({ capabilities, connected, targets, messages, onSend }: ChatPanelProps) => {
     const writableChannels = useMemo(
         () => (capabilities?.channels ?? []).filter((channel) => channel.can_send),
         [capabilities],
     );
-    const players = useMemo(() => entities.filter((entity) => entity.type === 'player'), [entities]);
+    const players = useMemo(() => targets.slice(0, 300), [targets]);
     const [kind, setKind] = useState<ChatKind>('channel');
     const [channel, setChannel] = useState('chat');
-    const [targetEntityId, setTargetEntityId] = useState('');
+    const [targetPlayerId, setTargetPlayerId] = useState('');
+    const [targetSearch, setTargetSearch] = useState('');
     const [text, setText] = useState('');
     const feedRef = useRef<HTMLDivElement>(null);
     const followTailRef = useRef(true);
@@ -54,11 +55,27 @@ export const ChatPanel = ({ capabilities, connected, entities, messages, onSend 
         }
     }, [channel, writableChannels]);
 
-    useEffect(() => {
-        if (!players.some((player) => player.entity_id === targetEntityId)) {
-            setTargetEntityId(players[0]?.entity_id ?? '');
+    const visiblePlayers = useMemo(() => {
+        const query = targetSearch.trim().toLocaleLowerCase();
+        if (!query) {
+            return players;
         }
-    }, [players, targetEntityId]);
+        return players.filter((player) =>
+            player.name.toLocaleLowerCase().includes(query) ||
+            player.player_id.toLocaleLowerCase().includes(query) ||
+            player.id?.toLocaleLowerCase().includes(query),
+        );
+    }, [players, targetSearch]);
+
+    useEffect(() => {
+        if (!players.some((player) => player.player_id === targetPlayerId)) {
+            setTargetPlayerId(players[0]?.player_id ?? '');
+            return;
+        }
+        if (targetSearch && !visiblePlayers.some((player) => player.player_id === targetPlayerId)) {
+            setTargetPlayerId(visiblePlayers[0]?.player_id ?? '');
+        }
+    }, [players, targetPlayerId, targetSearch, visiblePlayers]);
 
     const canSend = connected && (
         kind === 'channel'
@@ -66,7 +83,7 @@ export const ChatPanel = ({ capabilities, connected, entities, messages, onSend 
             : kind === 'say'
                 ? capabilities?.can_say === true
                 : kind === 'tell'
-                    ? capabilities?.can_tell === true && targetEntityId !== ''
+                    ? capabilities?.can_tell === true && targetPlayerId !== ''
                     : capabilities?.can_reply === true
     );
 
@@ -77,7 +94,7 @@ export const ChatPanel = ({ capabilities, connected, entities, messages, onSend 
         onSend(kind, text, kind === 'channel'
             ? { channel }
             : kind === 'tell'
-                ? { targetEntityId }
+                ? { targetPlayerId }
                 : undefined);
         setText('');
     };
@@ -150,20 +167,34 @@ export const ChatPanel = ({ capabilities, connected, entities, messages, onSend 
                     </label>
                 )}
                 {kind === 'tell' && (
-                    <label className="chat-field">
-                        <span>对象</span>
+                    <div className="chat-field chat-target-field">
+                        <label htmlFor="chat-target-search">对象</label>
+                        <input
+                            aria-label="搜索私聊对象"
+                            id="chat-target-search"
+                            onChange={(event) => setTargetSearch(event.target.value)}
+                            placeholder="按姓名或 player_id 搜索"
+                            spellCheck={false}
+                            value={targetSearch}
+                        />
                         <select
                             aria-label="私聊对象"
-                            disabled={!connected || players.length === 0}
-                            onChange={(event) => setTargetEntityId(event.target.value)}
-                            value={targetEntityId}
+                            disabled={!connected || visiblePlayers.length === 0}
+                            onChange={(event) => setTargetPlayerId(event.target.value)}
+                            value={targetPlayerId}
                         >
-                            {players.length === 0 && <option value="">附近没有在线玩家</option>}
-                            {players.map((player) => (
-                                <option key={player.entity_id} value={player.entity_id}>{player.name}</option>
+                            {visiblePlayers.length === 0 && (
+                                <option value="">
+                                    {players.length === 0 ? '当前没有在线玩家' : '没有匹配的在线玩家'}
+                                </option>
+                            )}
+                            {visiblePlayers.map((player) => (
+                                <option key={player.player_id} value={player.player_id}>
+                                    {player.name}{player.id ? ` · ${player.id}` : ''}
+                                </option>
                             ))}
                         </select>
-                    </label>
+                    </div>
                 )}
                 <div className="chat-input-row">
                     <input

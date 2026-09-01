@@ -53,13 +53,12 @@ int main(object me, string arg)
 
     reply_out = sprintf(HIG "%s回答你：%s\n" NOR,
                         me->name(1) + HIG "(" + me->query("id") + ")", arg);
-    if (!TELL_CMD->notice_user(me->name(1), me->query("id"), obj, reply_out))
+    if (!TELL_CMD->notice_user(me->name(1), me->query("id"), obj, reply_out,
+                               me, "reply", arg))
         return 1;
 
     if (function_exists("gmcp_chat_private_message", me))
         catch(me->gmcp_chat_private_message("reply", me, obj, arg));
-    if (function_exists("gmcp_chat_private_message", obj))
-        catch(obj->gmcp_chat_private_message("reply", me, obj, arg));
 
     // 成功的回答了
     write(HIG "你回答" + obj->name(1) + HIG + "(" + obj->query("id") +

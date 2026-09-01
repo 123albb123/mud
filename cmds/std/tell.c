@@ -8,7 +8,9 @@
 inherit F_DBASE;
 inherit F_CLEAN_UP;
 
-int notice_user(string my_name, string my_id, object obj, string tell_out);
+varargs int notice_user(string my_name, string my_id, object obj,
+                        string tell_out, object sender, string kind,
+                        string plain_text);
 int help(object me);
 
 void create() { seteuid(getuid()); }
@@ -70,13 +72,11 @@ int main(object me, string arg)
                        me->name(1) + HIG + "(" +
                            capitalize(my_id) + ")",
                        msg);
-    if (!notice_user(me->name(1), my_id, obj, tell_out))
+    if (!notice_user(me->name(1), my_id, obj, tell_out, me, "tell", msg))
         return 1;
 
     if (function_exists("gmcp_chat_private_message", me))
         catch(me->gmcp_chat_private_message("tell", me, obj, msg));
-    if (function_exists("gmcp_chat_private_message", obj))
-        catch(obj->gmcp_chat_private_message("tell", me, obj, msg));
 
     write(sprintf(HIG "你告诉%s(%s)：%s\n" NOR,
                   obj->name(1) + HIG,
@@ -142,22 +142,45 @@ string remote_tell(string cname, string from, string mud, string to, string msg,
 }
 
 // 将消息送给对方
-int notice_user(string my_name, string my_id, object obj, string tell_out)
+varargs int notice_user(string my_name, string my_id, object obj,
+                        string tell_out, object sender, string kind,
+                        string plain_text)
 {
     int i;
     mixed info;
     mixed *list;
     mixed piece;
+    mapping web_info;
+
+    /*
+     * The optional metadata is only for the local structured Chat.Message
+     * bridge. It deliberately contains no object, session, or object path so
+     * jam_talk's nosave temporary queue remains safe to persist in memory.
+     */
+    if (objectp(sender) && (kind == "tell" || kind == "reply") &&
+        stringp(plain_text))
+        web_info = ([
+            "kind"       : kind,
+            "sender_name" : my_name,
+            "sender_id"   : my_id,
+            "text"       : plain_text,
+        ]);
 
     if (obj->query("env/jam_talk"))
     {
         // 阻塞式交谈
         info = ({my_name, my_id, tell_out});
+        if (mapp(web_info))
+            info += ({web_info});
         list = obj->query_temp("tell_list");
         if (!arrayp(list) || sizeof(list) < 1)
         {
             // 对方没有阻塞消息，直接通知对方
             tell_object(obj, tell_out);
+            if (mapp(web_info) &&
+                function_exists("gmcp_chat_private_message", obj))
+                catch(obj->gmcp_chat_private_message(kind, sender, obj,
+                                                     plain_text));
             obj->set_temp("reply", my_id);
             list = ({info});
         }
@@ -167,6 +190,10 @@ int notice_user(string my_name, string my_id, object obj, string tell_out)
             // 对方阻塞的正是和我交谈的信息，所以
             // 这条信息就没有必要延迟发送了
             tell_object(obj, tell_out);
+            if (mapp(web_info) &&
+                function_exists("gmcp_chat_private_message", obj))
+                catch(obj->gmcp_chat_private_message(kind, sender, obj,
+                                                     plain_text));
         }
         else
         {
@@ -195,6 +222,9 @@ int notice_user(string my_name, string my_id, object obj, string tell_out)
 
                     // 记录这次交谈的信息
                     piece[2] += tell_out;
+                    if (mapp(web_info) && sizeof(piece) >= 4 &&
+                        mapp(piece[3]) && stringp(piece[3]["text"]))
+                        piece[3]["text"] += plain_text;
                     info = 0;
                 }
             }
@@ -223,6 +253,10 @@ int notice_user(string my_name, string my_id, object obj, string tell_out)
         // 正常聊天
         obj->set_temp("reply", my_id);
         tell_object(obj, tell_out);
+        if (mapp(web_info) &&
+            function_exists("gmcp_chat_private_message", obj))
+            catch(obj->gmcp_chat_private_message(kind, sender, obj,
+                                                 plain_text));
     }
 
     return 1;

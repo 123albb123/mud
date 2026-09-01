@@ -267,9 +267,24 @@ export interface ChatCapabilities {
     max_text: number;
 }
 
+export interface ChatTarget {
+    player_id: string;
+    name: string;
+    id?: string;
+}
+
+export interface ChatTargetsSnapshot {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    players: ChatTarget[];
+}
+
 export type WebChatSendRequest =
     | { kind: 'say'; text: string }
     | { kind: 'reply'; text: string }
+    | { kind: 'tell'; target_player_id: string; text: string }
     | { kind: 'tell'; target_entity_id: string; text: string }
     | { kind: 'channel'; channel: string; text: string; emote?: boolean };
 
@@ -293,6 +308,7 @@ export const GMCP_SUPPORTS = [
     'Quest.List 1',
     'Chat.Message 1',
     'Chat.Capabilities 1',
+    'Chat.Targets 1',
 ];
 
 export const GMCP_INITIAL_GETS = [
@@ -307,6 +323,7 @@ export const GMCP_INITIAL_GETS = [
     'Combat.Actions.Get',
     'Quest.List.Get',
     'Chat.Capabilities.Get',
+    'Chat.Targets.Get',
 ];
 
 const itemActions = new Set([
@@ -319,6 +336,7 @@ const itemIdPattern = /^i-[A-Za-z0-9]+-[0-9]+$/;
 const entityIdPattern = /^e-[A-Za-z0-9]+-[0-9]+$/;
 const questIdPattern = /^q-[A-Za-z0-9]+-[0-9]+$/;
 const chatMessageIdPattern = /^m-[A-Za-z0-9]+-[0-9]+$/;
+const chatPlayerIdPattern = /^p-[A-Za-z0-9]+-[0-9]+$/;
 const chatChannelPattern = /^[a-z0-9_-]{1,32}$/;
 const skillIdPattern = /^[a-z0-9_-]{1,64}$/;
 const combatActionIdPattern = /^(fight|kill|perform:[a-z0-9_-]{1,64}:[a-z0-9_-]{1,64}|exert:force:[a-z0-9_-]{1,64})$/;
@@ -838,6 +856,54 @@ export const toChatCapabilitiesSnapshot = (payload: unknown): ChatCapabilities |
     };
 };
 
+const parseChatTarget = (value: unknown): ChatTarget | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const playerId = typeof data.player_id === 'string' && chatPlayerIdPattern.test(data.player_id)
+        ? data.player_id
+        : null;
+    const name = safeDisplayText(data.name, 256);
+    if (!playerId || !name) {
+        return null;
+    }
+    const target: ChatTarget = { player_id: playerId, name };
+    if (data.id !== undefined) {
+        const id = safeDisplayText(data.id, 128);
+        if (!id || id.includes('/') || id.includes('\\')) {
+            return null;
+        }
+        target.id = id;
+    }
+    return target;
+};
+
+export const toChatTargetsSnapshot = (payload: unknown): ChatTargetsSnapshot | null => {
+    const data = snapshotHeader(payload);
+    if (!data || !Array.isArray(data.players)) {
+        return null;
+    }
+    const seen = new Set<string>();
+    const players = data.players
+        .slice(0, 300)
+        .map(parseChatTarget)
+        .filter((target): target is ChatTarget => {
+            if (!target || seen.has(target.player_id)) {
+                return false;
+            }
+            seen.add(target.player_id);
+            return true;
+        });
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        players,
+    };
+};
+
 const safeChatInput = (value: string): boolean =>
     typeof value === 'string' && value.length > 0 && value.length <= 2048 && !/[\r\n]/.test(value);
 
@@ -847,6 +913,7 @@ export const toWebChatSendRequest = (
     options: {
         channel?: string;
         targetEntityId?: string;
+        targetPlayerId?: string;
         emote?: boolean;
     } = {},
 ): WebChatSendRequest | null => {
@@ -860,7 +927,15 @@ export const toWebChatSendRequest = (
         return { kind, text };
     }
     if (kind === 'tell') {
-        return options.targetEntityId && entityIdPattern.test(options.targetEntityId)
+        if (options.targetEntityId !== undefined && options.targetPlayerId !== undefined) {
+            return null;
+        }
+        if (options.targetPlayerId !== undefined) {
+            return chatPlayerIdPattern.test(options.targetPlayerId)
+                ? { kind, target_player_id: options.targetPlayerId, text }
+                : null;
+        }
+        return options.targetEntityId !== undefined && entityIdPattern.test(options.targetEntityId)
             ? { kind, target_entity_id: options.targetEntityId, text }
             : null;
     }

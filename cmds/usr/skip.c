@@ -6,11 +6,35 @@ inherit F_CLEAN_UP;
 
 int help(object me);
 
+private void deliver_web_private_metadata(object me, mixed info)
+{
+    mapping metadata;
+    string kind;
+    string sender_name;
+    string sender_id;
+    string text;
+
+    if (!objectp(me) || !arrayp(info) || sizeof(info) < 4 ||
+        !mapp(info[3]))
+        return;
+    metadata = info[3];
+    kind = metadata["kind"];
+    sender_name = metadata["sender_name"];
+    sender_id = metadata["sender_id"];
+    text = metadata["text"];
+    if ((kind != "tell" && kind != "reply") ||
+        !stringp(sender_name) || !stringp(sender_id) || !stringp(text) ||
+        !function_exists("gmcp_chat_private_delivered", me))
+        return;
+    catch(me->gmcp_chat_private_delivered(kind, sender_name, sender_id, text));
+}
+
 int main(object me, string arg)
 {
     mixed list;
     mixed info;
     string msg;
+    int i;
 
     list = me->query_temp("tell_list");
     if (arrayp(list) && sizeof(list) > 0)
@@ -32,6 +56,10 @@ int main(object me, string arg)
             else
                 // 消息太多
                 me->start_more(msg);
+
+            /* list[0] was already delivered; only queued entries need GMCP. */
+            for (i = 1; i < sizeof(list); i++)
+                deliver_web_private_metadata(me, list[i]);
 
             me->delete_temp("tell_list");
             me->delete_temp("reply");
@@ -62,6 +90,7 @@ int main(object me, string arg)
             else
                 // 历史消息太长，需要用MORE方式显示
                 me->start_more(info[2]);
+            deliver_web_private_metadata(me, info);
             break;
         }
 

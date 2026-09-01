@@ -7,7 +7,9 @@
 #define GMCP_ENTITY_POLL_INTERVAL 4
 #define GMCP_QUEST_POLL_INTERVAL 4
 #define GMCP_CHAT_POLL_INTERVAL 4
+#define GMCP_CHAT_TARGET_POLL_INTERVAL 10
 #define GMCP_CHAT_TEXT_LIMIT 2048
+#define GMCP_CHAT_TARGETS_VERSION 1
 #define GMCP_ACTION_D "/adm/daemons/gmcp_actiond"
 
 nosave string *gmcp_log = ({});
@@ -61,6 +63,13 @@ private nosave int gmcp_chat_polling;
 private nosave int gmcp_chat_capabilities_revision;
 private nosave string gmcp_chat_capabilities_fingerprint;
 private nosave int gmcp_chat_capabilities_refresh_pending;
+private nosave mapping gmcp_chat_target_ids = ([]);
+private nosave string gmcp_chat_target_session;
+private nosave int gmcp_chat_target_sequence;
+private nosave int gmcp_chat_targets_revision;
+private nosave string gmcp_chat_targets_fingerprint;
+private nosave int gmcp_chat_targets_refresh_pending;
+private nosave int gmcp_chat_targets_polling;
 
 varargs void sendGMCP(mapping data, mixed *modules...);
 private int gmcp_supports(string package);
@@ -68,11 +77,14 @@ private int gmcp_entity_action_available(object entity, string action);
 void gmcp_combat_actions_changed();
 void gmcp_quests_changed();
 void gmcp_chat_capabilities_changed();
+void gmcp_chat_targets_changed();
 void gmcp_chat_channel_message(string channel, object sender, string sender_name,
                                string sender_id, string text, int emote);
 void gmcp_chat_say_message(object sender, string text);
 void gmcp_chat_private_message(string kind, object sender, object recipient,
                                string text);
+void gmcp_chat_private_delivered(string kind, string sender_name,
+                                 string sender_id, string text);
 private void gmcp_handle_web_chat_send(string payload);
 
 private string query_gmcp_room_id(object room)
@@ -660,6 +672,53 @@ private string gmcp_state_fingerprint(mapping snapshot)
     return gmcp_snapshot_fingerprint(data);
 }
 
+private string gmcp_strip_ansi(string value)
+{
+    string result;
+    int length;
+    int i;
+
+    if (!stringp(value))
+        return "";
+
+    result = "";
+    length = strlen(value);
+    for (i = 0; i < length; i++)
+    {
+        if (value[i] != 27)
+        {
+            result += value[i..i];
+            continue;
+        }
+
+        i++;
+        if (i >= length)
+            break;
+        if (value[i] == '[')
+        {
+            i++;
+            while (i < length &&
+                   !(value[i] >= '@' && value[i] <= '~'))
+                i++;
+        }
+        else if (value[i] == ']')
+        {
+            i++;
+            while (i < length && value[i] != 7)
+            {
+                if (value[i] == 27 && i + 1 < length &&
+                    value[i + 1] == '\\')
+                {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+        }
+    }
+    return result;
+}
+
 private string gmcp_task_text(mixed value, int limit, int multiline)
 {
     string text;
@@ -667,7 +726,7 @@ private string gmcp_task_text(mixed value, int limit, int multiline)
     if (!stringp(value))
         return "";
 
-    text = remove_ansi(value);
+    text = gmcp_strip_ansi(remove_ansi(value));
     text = replace_string(text, "\r", "");
     if (!multiline)
         text = replace_string(text, "\n", " ");
@@ -853,6 +912,38 @@ private mixed gmcp_quest_progress(mapping progress, string section,
     return values[path];
 }
 
+private int gmcp_quest_inventory_count(string target_file)
+{
+    object *inventory;
+    object item;
+    string item_file;
+    int amount;
+    int count;
+    int i;
+
+    if (!stringp(target_file) || target_file == "")
+        return 0;
+
+    inventory = all_inventory(this_object());
+    for (i = 0; i < sizeof(inventory); i++)
+    {
+        item = inventory[i];
+        if (!objectp(item))
+            continue;
+        item_file = base_name(item) + ".c";
+        if (item_file != target_file)
+            continue;
+
+        amount = 1;
+        if (function_exists("query_amount", item))
+            amount = item->query_amount();
+        if (!intp(amount) || amount < 1)
+            amount = 1;
+        count += amount;
+    }
+    return count;
+}
+
 private mapping gmcp_quest2_record(object quest, mapping progress,
                                    string status)
 {
@@ -866,6 +957,7 @@ private mapping gmcp_quest2_record(object quest, mapping progress,
     string *keys_to_check;
     mixed current;
     mixed required;
+    int inventory_current;
     int i;
 
     if (!objectp(quest) || !stringp(status) ||
@@ -904,6 +996,9 @@ private mapping gmcp_quest2_record(object quest, mapping progress,
             required = requirements[keys_to_check[i]];
             current = gmcp_quest_progress(progress, "killed",
                                           keys_to_check[i]);
+            if (status == "completed" && gmcp_task_number(required) &&
+                (!gmcp_task_number(current) || current < required))
+                current = required;
             objective = gmcp_quest2_objective("kill", keys_to_check[i],
                                               current, required);
             if (mapp(objective))
@@ -920,6 +1015,12 @@ private mapping gmcp_quest2_record(object quest, mapping progress,
             required = requirements[keys_to_check[i]];
             current = gmcp_quest_progress(progress, "item",
                                           keys_to_check[i]);
+            inventory_current = gmcp_quest_inventory_count(keys_to_check[i]);
+            if (!gmcp_task_number(current) || inventory_current > current)
+                current = inventory_current;
+            if (status == "completed" && gmcp_task_number(required) &&
+                (!gmcp_task_number(current) || current < required))
+                current = required;
             objective = gmcp_quest2_objective("collect", keys_to_check[i],
                                               current, required);
             if (mapp(objective))
@@ -1362,6 +1463,235 @@ private mapping gmcp_chat_actor(object actor, string supplied_name,
     return result;
 }
 
+private int gmcp_chat_target_eligible(object me, object target)
+{
+    int is_player;
+    int is_chatter;
+    int is_net_dead;
+    mixed visible;
+
+    if (!objectp(me) || !objectp(target) || target == me ||
+        !userp(target) || !interactive(target) || !living(target))
+        return 0;
+    if (catch(is_player = playerp(target)) || !is_player)
+        return 0;
+    if (function_exists("is_chatter", target) &&
+        !catch(is_chatter = (int)target->is_chatter()) && is_chatter)
+        return 0;
+    if (function_exists("is_net_dead", target) &&
+        !catch(is_net_dead = (int)target->is_net_dead()) && is_net_dead)
+        return 0;
+    if (catch(visible = me->visible(target)) || !visible)
+        return 0;
+    return 1;
+}
+
+private string query_gmcp_chat_target_id(object target)
+{
+    string key;
+
+    if (!objectp(target))
+        return "";
+    if (!mapp(gmcp_chat_target_ids))
+        gmcp_chat_target_ids = ([]);
+    if (!stringp(gmcp_chat_target_session))
+        gmcp_chat_target_session = sprintf("%08x", random(0x7fffffff));
+
+    key = file_name(target);
+    if (!stringp(gmcp_chat_target_ids[key]))
+    {
+        gmcp_chat_target_sequence++;
+        gmcp_chat_target_ids[key] = sprintf("p-%s-%04d",
+                                             gmcp_chat_target_session,
+                                             gmcp_chat_target_sequence);
+    }
+    return gmcp_chat_target_ids[key];
+}
+
+private string gmcp_chat_target_name(object target)
+{
+    mixed value;
+    string name;
+
+    name = "";
+    if (objectp(target) && !catch(value = target->name(1)) &&
+        stringp(value))
+        name = gmcp_chat_text(value);
+    if (name == "" && objectp(target) &&
+        !catch(value = target->short()) && stringp(value))
+        name = gmcp_chat_text(value);
+    if (strlen(name) > 256)
+        name = name[0..255];
+    return name;
+}
+
+private mapping gmcp_chat_target_record(object target)
+{
+    mapping record;
+    string public_id;
+    mixed value;
+
+    if (!gmcp_chat_target_eligible(this_object(), target))
+        return 0;
+    if (gmcp_chat_target_name(target) == "")
+        return 0;
+
+    record = ([
+        "player_id": query_gmcp_chat_target_id(target),
+        "name"     : gmcp_chat_target_name(target),
+    ]);
+    public_id = "";
+    if (!catch(value = target->query("id")) && stringp(value))
+        public_id = gmcp_chat_text(value);
+    if (strlen(public_id) > 128)
+        public_id = public_id[0..127];
+    if (public_id != "" && strsrch(public_id, "/") == -1 &&
+        strsrch(public_id, "\\") == -1)
+        record["id"] = public_id;
+    return record;
+}
+
+private mapping gmcp_chat_targets_snapshot()
+{
+    object *online;
+    mixed *players;
+    mapping active;
+    mapping record;
+    string *keys_to_check;
+    string key;
+    int i;
+
+    online = all_interactive();
+    players = ({});
+    active = ([]);
+    for (i = 0; i < sizeof(online); i++)
+    {
+        record = gmcp_chat_target_record(online[i]);
+        if (!mapp(record))
+            continue;
+        key = file_name(online[i]);
+        active[key] = 1;
+        players += ({record});
+    }
+
+    if (mapp(gmcp_chat_target_ids))
+    {
+        keys_to_check = keys(gmcp_chat_target_ids);
+        for (i = 0; i < sizeof(keys_to_check); i++)
+        {
+            key = keys_to_check[i];
+            if (!active[key])
+                map_delete(gmcp_chat_target_ids, key);
+        }
+    }
+
+    players = sort_array(players,
+                         (: strcmp($1["player_id"], $2["player_id"]) :));
+    return ([
+        "version" : GMCP_CHAT_TARGETS_VERSION,
+        "snapshot": 1,
+        "revision": gmcp_chat_targets_revision,
+        "sequence": gmcp_chat_targets_revision,
+        "players" : players,
+    ]);
+}
+
+varargs void gmcp_refresh_chat_targets(int force)
+{
+    mapping targets;
+    string fingerprint;
+
+    if (!has_gmcp() || (!force && !gmcp_supports("Chat.Targets")))
+        return;
+
+    targets = gmcp_chat_targets_snapshot();
+    fingerprint = gmcp_state_fingerprint(targets);
+    if (!force && fingerprint == gmcp_chat_targets_fingerprint)
+        return;
+    if (fingerprint != gmcp_chat_targets_fingerprint)
+        gmcp_chat_targets_revision++;
+    targets["revision"] = gmcp_chat_targets_revision;
+    targets["sequence"] = gmcp_chat_targets_revision;
+    sendGMCP(targets, "Chat", "Targets");
+    gmcp_chat_targets_fingerprint = fingerprint;
+}
+
+void gmcp_flush_chat_targets()
+{
+    gmcp_chat_targets_refresh_pending = 0;
+    gmcp_refresh_chat_targets();
+}
+
+void gmcp_chat_targets_changed()
+{
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Chat.Targets") ||
+        gmcp_chat_targets_refresh_pending)
+        return;
+    gmcp_chat_targets_refresh_pending = 1;
+    call_out("gmcp_flush_chat_targets", 0);
+}
+
+void gmcp_poll_chat_targets()
+{
+    gmcp_chat_targets_polling = 0;
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Chat.Targets"))
+        return;
+    gmcp_refresh_chat_targets();
+    gmcp_chat_targets_polling = 1;
+    call_out("gmcp_poll_chat_targets", GMCP_CHAT_TARGET_POLL_INTERVAL);
+}
+
+private void gmcp_start_chat_target_poll()
+{
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Chat.Targets") || gmcp_chat_targets_polling)
+        return;
+    gmcp_chat_targets_polling = 1;
+    call_out("gmcp_poll_chat_targets", GMCP_CHAT_TARGET_POLL_INTERVAL);
+}
+
+private int gmcp_safe_chat_player_id(string value)
+{
+    int i;
+
+    if (!stringp(value) || strlen(value) < 4 || strlen(value) > 96 ||
+        value[0] != 'p' || value[1] != '-')
+        return 0;
+    for (i = 2; i < strlen(value); i++)
+    {
+        if ((value[i] >= 'a' && value[i] <= 'z') ||
+            (value[i] >= 'A' && value[i] <= 'Z') ||
+            (value[i] >= '0' && value[i] <= '9') || value[i] == '-')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+private object gmcp_find_chat_target(string player_id)
+{
+    object *online;
+    string key;
+    int i;
+
+    if (!gmcp_safe_chat_player_id(player_id) ||
+        !mapp(gmcp_chat_target_ids))
+        return 0;
+
+    online = all_interactive();
+    for (i = 0; i < sizeof(online); i++)
+    {
+        if (!gmcp_chat_target_eligible(this_object(), online[i]))
+            continue;
+        key = file_name(online[i]);
+        if (gmcp_chat_target_ids[key] == player_id)
+            return online[i];
+    }
+    return 0;
+}
+
 private void gmcp_chat_send_event(string kind, string text, string channel,
                                   object sender, string sender_name,
                                   string sender_id, object recipient, int emote)
@@ -1430,6 +1760,17 @@ void gmcp_chat_private_message(string kind, object sender, object recipient,
         (kind != "tell" && kind != "reply"))
         return;
     gmcp_chat_send_event(kind, text, "", sender, "", "", recipient, 0);
+}
+
+void gmcp_chat_private_delivered(string kind, string sender_name,
+                                 string sender_id, string text)
+{
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Chat.Message") ||
+        (kind != "tell" && kind != "reply"))
+        return;
+    gmcp_chat_send_event(kind, text, "", 0, sender_name, sender_id,
+                         this_object(), 0);
 }
 
 private int gmcp_supports(string package)
@@ -2459,6 +2800,8 @@ private void gmcp_reset_session_state()
     remove_call_out("gmcp_poll_quest_state");
     remove_call_out("gmcp_flush_chat_capabilities");
     remove_call_out("gmcp_poll_chat_capabilities");
+    remove_call_out("gmcp_flush_chat_targets");
+    remove_call_out("gmcp_poll_chat_targets");
 
     gmcp_room_ids = ([]);
     gmcp_room_session = 0;
@@ -2508,6 +2851,13 @@ private void gmcp_reset_session_state()
     gmcp_chat_capabilities_revision = 0;
     gmcp_chat_capabilities_fingerprint = 0;
     gmcp_chat_capabilities_refresh_pending = 0;
+    gmcp_chat_target_ids = ([]);
+    gmcp_chat_target_session = 0;
+    gmcp_chat_target_sequence = 0;
+    gmcp_chat_targets_revision = 0;
+    gmcp_chat_targets_fingerprint = 0;
+    gmcp_chat_targets_refresh_pending = 0;
+    gmcp_chat_targets_polling = 0;
     gmcp_support_versions = ([]);
     gmcp_client_info = ([]);
 }
@@ -2532,6 +2882,7 @@ private void gmcp_enable()
             "Quest.List"     : GMCP_QUEST_VERSION,
             "Chat.Message"   : GMCP_CHAT_VERSION,
             "Chat.Capabilities": GMCP_CHAT_VERSION,
+            "Chat.Targets"   : GMCP_CHAT_TARGETS_VERSION,
         ]),
     ]), "Server", "Hello");
 }
@@ -3403,7 +3754,8 @@ private int gmcp_chat_request_key_allowed(string kind, string key)
         return 0;
     if (key == "kind" || key == "text")
         return 1;
-    if (kind == "tell" && key == "target_entity_id")
+    if (kind == "tell" && (key == "target_entity_id" ||
+                            key == "target_player_id"))
         return 1;
     if (kind == "channel" && (key == "channel" || key == "emote"))
         return 1;
@@ -3419,11 +3771,14 @@ private void gmcp_handle_web_chat_send(string payload)
     string kind;
     string text;
     string target_entity_id;
+    string target_player_id;
     string target_id;
     string channel;
     mixed result;
     mixed value;
     int emote;
+    int has_entity_target;
+    int has_player_target;
     int i;
 
     if (catch(decoded = json_decode(payload)) || !mapp(decoded))
@@ -3480,14 +3835,37 @@ private void gmcp_handle_web_chat_send(string payload)
     }
     else if (kind == "tell")
     {
-        target_entity_id = data["target_entity_id"];
-        if (!stringp(target_entity_id) ||
-            !gmcp_safe_entity_id(target_entity_id))
+        has_entity_target = !undefinedp(data["target_entity_id"]);
+        has_player_target = !undefinedp(data["target_player_id"]);
+        if (has_entity_target == has_player_target)
         {
             gmcp_write_native_action_failure("聊天目标无效。");
             return;
         }
-        target = gmcp_find_entity(target_entity_id);
+
+        if (has_player_target)
+        {
+            target_player_id = data["target_player_id"];
+            if (!stringp(target_player_id) ||
+                !gmcp_safe_chat_player_id(target_player_id))
+            {
+                gmcp_write_native_action_failure("聊天目标无效。");
+                return;
+            }
+            target = gmcp_find_chat_target(target_player_id);
+        }
+        else
+        {
+            target_entity_id = data["target_entity_id"];
+            if (!stringp(target_entity_id) ||
+                !gmcp_safe_entity_id(target_entity_id))
+            {
+                gmcp_write_native_action_failure("聊天目标无效。");
+                return;
+            }
+            target = gmcp_find_entity(target_entity_id);
+        }
+
         if (!objectp(target) || gmcp_entity_type(target) != "player" ||
             catch(target_id = target->query("id")) ||
             !stringp(target_id) || target_id == "" ||
@@ -3583,6 +3961,7 @@ void gmcp(string req)
             gmcp_start_realtime_poll();
             gmcp_start_quest_poll();
             gmcp_start_chat_capability_poll();
+            gmcp_start_chat_target_poll();
         }
     }
     else if (package == "Char.Vitals.Get")
@@ -3656,6 +4035,11 @@ void gmcp(string req)
     {
         gmcp_refresh_chat_capabilities(1);
         gmcp_start_chat_capability_poll();
+    }
+    else if (package == "Chat.Targets.Get")
+    {
+        gmcp_refresh_chat_targets(1);
+        gmcp_start_chat_target_poll();
     }
     else if (package == "Web.Item.Action")
     {

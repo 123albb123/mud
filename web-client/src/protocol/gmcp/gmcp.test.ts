@@ -5,6 +5,7 @@ import {
     GMCP_SUPPORTS,
     parseGMCP,
     toChatCapabilitiesSnapshot,
+    toChatTargetsSnapshot,
     toChatMessage,
     toCharacterVitals,
     toCharacterStatus,
@@ -83,6 +84,7 @@ describe('GMCP codec', () => {
             'Quest.List 1',
             'Chat.Message 1',
             'Chat.Capabilities 1',
+            'Chat.Targets 1',
         ]);
         expect(GMCP_INITIAL_GETS).toEqual([
             'Char.Vitals.Get',
@@ -96,6 +98,7 @@ describe('GMCP codec', () => {
             'Combat.Actions.Get',
             'Quest.List.Get',
             'Chat.Capabilities.Get',
+            'Chat.Targets.Get',
         ]);
     });
 
@@ -419,17 +422,59 @@ describe('GMCP codec', () => {
             can_reply: false,
             max_text: 2048,
         })?.channels).toEqual([{ id: 'chat', name: '闲聊', can_send: true }]);
+
+        expect(toChatTargetsSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 3,
+            sequence: 3,
+            players: [
+                { player_id: 'p-session-0001', name: '在线侠客', id: 'xia' },
+                { player_id: 'p-session-0001', name: '重复项' },
+                { player_id: 'e-session-0002', name: '错误前缀' },
+                { player_id: 'p-session-0003', name: '坏路径', id: '/clone/user/user.c' },
+                { player_id: 'p-session-0004', name: '换行\n名字' },
+            ],
+        })).toEqual({
+            version: 1,
+            snapshot: true,
+            revision: 3,
+            sequence: 3,
+            players: [{ player_id: 'p-session-0001', name: '在线侠客', id: 'xia' }],
+        });
+        expect(toChatTargetsSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 4,
+            sequence: 4,
+            players: [],
+        })?.players).toEqual([]);
+        expect(toChatTargetsSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 5,
+            sequence: 5,
+            players: [{ player_id: 'p-session-0001/path', name: '坏目标' }],
+        })?.players).toEqual([]);
     });
 
     it('builds only fixed, newline-free chat send requests', () => {
         expect(toWebChatSendRequest('channel', '你好', { channel: 'chat' })).toEqual({
             kind: 'channel', channel: 'chat', text: '你好',
         });
-        expect(toWebChatSendRequest('tell', '在吗', { targetEntityId: 'e-session-0001' })).toEqual({
-            kind: 'tell', target_entity_id: 'e-session-0001', text: '在吗',
+        expect(toWebChatSendRequest('tell', '在吗', { targetPlayerId: 'p-session-0001' })).toEqual({
+            kind: 'tell', target_player_id: 'p-session-0001', text: '在吗',
+        });
+        expect(toWebChatSendRequest('tell', '兼容', { targetEntityId: 'e-session-0001' })).toEqual({
+            kind: 'tell', target_entity_id: 'e-session-0001', text: '兼容',
         });
         expect(toWebChatSendRequest('say', '坏\n命令')).toBeNull();
         expect(toWebChatSendRequest('channel', '你好', { channel: '/cmds/std/say' })).toBeNull();
         expect(toWebChatSendRequest('tell', '你好', { targetEntityId: 'player-name' })).toBeNull();
+        expect(toWebChatSendRequest('tell', '你好', { targetPlayerId: 'p-session-0001/path' })).toBeNull();
+        expect(toWebChatSendRequest('tell', '你好', {
+            targetEntityId: 'e-session-0001',
+            targetPlayerId: 'p-session-0001',
+        })).toBeNull();
     });
 });

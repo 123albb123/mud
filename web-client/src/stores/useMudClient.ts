@@ -21,12 +21,14 @@ import {
     toSkillsSnapshot,
     toQuestListSnapshot,
     toChatCapabilitiesSnapshot,
+    toChatTargetsSnapshot,
     toChatMessage,
     toWebChatSendRequest,
     type CharacterStatus,
     type ChatKind,
     type ChatMessage,
     type ChatCapabilities,
+    type ChatTarget,
     type CombatTargetMode,
     type CharacterSkill,
     type CombatAction,
@@ -71,6 +73,7 @@ export const useMudClient = () => {
     const [equipmentSlotOrder, setEquipmentSlotOrder] = useState<string[]>([]);
     const [quests, setQuests] = useState<QuestListSnapshot | null>(null);
     const [chatCapabilities, setChatCapabilities] = useState<ChatCapabilities | null>(null);
+    const [chatTargets, setChatTargets] = useState<ChatTarget[]>([]);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [serverSensitive, setServerSensitive] = useState(false);
     const [debugEntries, setDebugEntries] = useState<ProtocolDebugEntry[]>([]);
@@ -89,6 +92,7 @@ export const useMudClient = () => {
     const combatActionsRevisionRef = useRef(-1);
     const questsRevisionRef = useRef(-1);
     const chatCapabilitiesRevisionRef = useRef(-1);
+    const chatTargetsRevisionRef = useRef(-1);
     const chatMessageIdsRef = useRef(new Set<string>());
     const gmcpStateRequestedRef = useRef(false);
 
@@ -199,6 +203,12 @@ export const useMudClient = () => {
                 chatCapabilitiesRevisionRef.current = nextCapabilities.revision;
                 setChatCapabilities(nextCapabilities);
             }
+        } else if (message.packageName === 'Chat.Targets') {
+            const nextTargets = toChatTargetsSnapshot(message.payload);
+            if (nextTargets && nextTargets.revision >= chatTargetsRevisionRef.current) {
+                chatTargetsRevisionRef.current = nextTargets.revision;
+                setChatTargets(nextTargets.players);
+            }
         } else if (message.packageName === 'Chat.Message') {
             const nextMessage = toChatMessage(message.payload);
             if (nextMessage && !chatMessageIdsRef.current.has(nextMessage.message_id)) {
@@ -244,6 +254,7 @@ export const useMudClient = () => {
                     combatActionsRevisionRef.current = -1;
                     questsRevisionRef.current = -1;
                     chatCapabilitiesRevisionRef.current = -1;
+                    chatTargetsRevisionRef.current = -1;
                     chatMessageIdsRef.current.clear();
                     gmcpStateRequestedRef.current = false;
                     setVitals(null);
@@ -258,6 +269,7 @@ export const useMudClient = () => {
                     setEquipmentSlotOrder([]);
                     setQuests(null);
                     setChatCapabilities(null);
+                    setChatTargets([]);
                     setChatMessages([]);
                 } else if (state === 'closed') {
                     setVitals(null);
@@ -272,9 +284,11 @@ export const useMudClient = () => {
                     setEquipmentSlotOrder([]);
                     questsRevisionRef.current = -1;
                     chatCapabilitiesRevisionRef.current = -1;
+                    chatTargetsRevisionRef.current = -1;
                     chatMessageIdsRef.current.clear();
                     setQuests(null);
                     setChatCapabilities(null);
+                    setChatTargets([]);
                     setChatMessages([]);
                 }
             },
@@ -316,6 +330,7 @@ export const useMudClient = () => {
         setEquipmentSlotOrder([]);
         setQuests(null);
         setChatCapabilities(null);
+        setChatTargets([]);
         setChatMessages([]);
         inventoryRevisionRef.current = -1;
         equipmentRevisionRef.current = -1;
@@ -327,6 +342,7 @@ export const useMudClient = () => {
         combatActionsRevisionRef.current = -1;
         questsRevisionRef.current = -1;
         chatCapabilitiesRevisionRef.current = -1;
+        chatTargetsRevisionRef.current = -1;
         chatMessageIdsRef.current.clear();
         gmcpStateRequestedRef.current = false;
         setServerSensitive(false);
@@ -395,7 +411,7 @@ export const useMudClient = () => {
     const sendChat = useCallback((
         kind: ChatKind,
         text: string,
-        options?: { channel?: string; targetEntityId?: string; emote?: boolean },
+        options?: { channel?: string; targetEntityId?: string; targetPlayerId?: string; emote?: boolean },
     ) => {
         const parser = parserRef.current;
         const request = toWebChatSendRequest(kind, text, options);
@@ -421,6 +437,7 @@ export const useMudClient = () => {
         equipmentSlotOrder,
         quests,
         chatCapabilities,
+        chatTargets,
         chatMessages,
         serverSensitive,
         debugEntries,

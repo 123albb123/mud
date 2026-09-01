@@ -200,7 +200,7 @@ export const App = () => {
                         <ChatPanel
                             capabilities={client.chatCapabilities}
                             connected={connected}
-                            entities={client.entities}
+                            targets={client.chatTargets}
                             messages={client.chatMessages}
                             onSend={client.sendChat}
                         />
