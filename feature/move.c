@@ -227,6 +227,8 @@ varargs int move(mixed dest, int raw)
             me->gmcp_status_changed();
         if (function_exists("gmcp_combat_actions_changed", me))
             me->gmcp_combat_actions_changed();
+        if (function_exists("gmcp_chat_capabilities_changed", me))
+            me->gmcp_chat_capabilities_changed();
     }
 
     return 1;

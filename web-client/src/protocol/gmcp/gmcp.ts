@@ -187,11 +187,97 @@ export interface RoomEntitiesSnapshot {
     entities: RoomEntity[];
 }
 
+export type QuestStatus = 'active' | 'available' | 'completed' | 'failed';
+export type QuestSystem = 'traditional' | 'quest2' | 'ultra' | 'mirror' | 'daily';
+
+export interface QuestObjective {
+    kind: string;
+    title: string;
+    detail?: string;
+    target_id?: string;
+    current?: number;
+    required?: number;
+}
+
+export interface QuestRecord {
+    quest_id: string;
+    system: QuestSystem;
+    category: string;
+    title: string;
+    detail: string;
+    status: QuestStatus;
+    level?: number;
+    deadline?: number;
+    objectives: QuestObjective[];
+}
+
+export interface QuestStats {
+    traditional_completed?: number;
+    mirror_completed?: number;
+    active_count?: number;
+    completed_count?: number;
+}
+
+export interface QuestListSnapshot {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    quests: QuestRecord[];
+    completed: QuestRecord[];
+    stats: QuestStats;
+}
+
+export interface ChatActor {
+    name: string;
+    id?: string;
+}
+
+export type ChatKind = 'channel' | 'say' | 'tell' | 'reply';
+export type ChatDirection = 'in' | 'out';
+
+export interface ChatMessage {
+    version: number;
+    message_id: string;
+    timestamp: number;
+    kind: ChatKind;
+    direction: ChatDirection;
+    sender: ChatActor;
+    recipient?: ChatActor;
+    channel?: string;
+    emote?: boolean;
+    text: string;
+}
+
+export interface ChatChannel {
+    id: string;
+    name: string;
+    can_send: boolean;
+}
+
+export interface ChatCapabilities {
+    version: number;
+    snapshot: true;
+    revision: number;
+    sequence: number;
+    channels: ChatChannel[];
+    can_say: boolean;
+    can_tell: boolean;
+    can_reply: boolean;
+    max_text: number;
+}
+
+export type WebChatSendRequest =
+    | { kind: 'say'; text: string }
+    | { kind: 'reply'; text: string }
+    | { kind: 'tell'; target_entity_id: string; text: string }
+    | { kind: 'channel'; channel: string; text: string; emote?: boolean };
+
 const decoder = new TextDecoder('utf-8');
 
 export const GMCP_CLIENT_HELLO = {
     client: 'Yanhuang Web',
-    version: '0.2.1',
+    version: '0.5.0',
 };
 
 export const GMCP_SUPPORTS = [
@@ -204,6 +290,9 @@ export const GMCP_SUPPORTS = [
     'Char.Skills 1',
     'Combat.State 1',
     'Combat.Actions 1',
+    'Quest.List 1',
+    'Chat.Message 1',
+    'Chat.Capabilities 1',
 ];
 
 export const GMCP_INITIAL_GETS = [
@@ -216,6 +305,8 @@ export const GMCP_INITIAL_GETS = [
     'Char.Skills.Get',
     'Combat.State.Get',
     'Combat.Actions.Get',
+    'Quest.List.Get',
+    'Chat.Capabilities.Get',
 ];
 
 const itemActions = new Set([
@@ -226,6 +317,9 @@ const entityActions = new Set([
 ]);
 const itemIdPattern = /^i-[A-Za-z0-9]+-[0-9]+$/;
 const entityIdPattern = /^e-[A-Za-z0-9]+-[0-9]+$/;
+const questIdPattern = /^q-[A-Za-z0-9]+-[0-9]+$/;
+const chatMessageIdPattern = /^m-[A-Za-z0-9]+-[0-9]+$/;
+const chatChannelPattern = /^[a-z0-9_-]{1,32}$/;
 const skillIdPattern = /^[a-z0-9_-]{1,64}$/;
 const combatActionIdPattern = /^(fight|kill|perform:[a-z0-9_-]{1,64}:[a-z0-9_-]{1,64}|exert:force:[a-z0-9_-]{1,64})$/;
 const noTargetExertNames = new Set([
@@ -469,6 +563,314 @@ const safeProtocolText = (value: unknown, required = true): string | null => {
         return null;
     }
     return value;
+};
+
+const safeDisplayText = (
+    value: unknown,
+    maxLength: number,
+    multiline = false,
+    required = true,
+): string | null => {
+    if (typeof value !== 'string' || value.length > maxLength ||
+        (multiline
+            ? /[\r\u0000-\u0008\u000b-\u001f\u007f]/.test(value)
+            : /[\r\n\u0000-\u001f\u007f]/.test(value)) ||
+        (required && value.length === 0)) {
+        return null;
+    }
+    return value;
+};
+
+const nonNegativeInteger = (value: unknown, max = 1_000_000_000): number | undefined => {
+    const number = finiteNumber(value);
+    return number !== undefined && Number.isInteger(number) && number >= 0 && number <= max
+        ? number
+        : undefined;
+};
+
+const questStatuses = new Set<QuestStatus>(['active', 'available', 'completed', 'failed']);
+const questSystems = new Set<QuestSystem>(['traditional', 'quest2', 'ultra', 'mirror', 'daily']);
+
+const parseQuestObjective = (value: unknown): QuestObjective | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const kind = safeDisplayText(data.kind, 64);
+    const title = safeDisplayText(data.title, 256);
+    if (!kind || !title || kind.includes('/') || kind.includes('\\')) {
+        return null;
+    }
+    const objective: QuestObjective = { kind, title };
+    const detail = data.detail === undefined ? null : safeDisplayText(data.detail, 1024, true);
+    if (detail) {
+        objective.detail = detail;
+    }
+    if (data.target_id !== undefined && typeof data.target_id === 'string' && entityIdPattern.test(data.target_id)) {
+        objective.target_id = data.target_id;
+    }
+    const current = finiteNumber(data.current);
+    if (current !== undefined && current >= 0) {
+        objective.current = current;
+    }
+    const required = finiteNumber(data.required);
+    if (required !== undefined && required >= 0) {
+        objective.required = required;
+    }
+    return objective;
+};
+
+const parseQuestObjectives = (value: unknown): QuestObjective[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value
+        .slice(0, 64)
+        .map(parseQuestObjective)
+        .filter((objective): objective is QuestObjective => objective !== null);
+};
+
+const parseQuestRecord = (value: unknown): QuestRecord | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const questId = typeof data.quest_id === 'string' && questIdPattern.test(data.quest_id)
+        ? data.quest_id
+        : null;
+    const system = typeof data.system === 'string' && questSystems.has(data.system as QuestSystem)
+        ? data.system as QuestSystem
+        : null;
+    const category = safeDisplayText(data.category, 64);
+    const title = safeDisplayText(data.title, 256);
+    const detail = safeDisplayText(data.detail, 4096, true);
+    const status = typeof data.status === 'string' && questStatuses.has(data.status as QuestStatus)
+        ? data.status as QuestStatus
+        : null;
+    if (!questId || !system || !category || !title || !detail || !status) {
+        return null;
+    }
+    const record: QuestRecord = {
+        quest_id: questId,
+        system,
+        category,
+        title,
+        detail,
+        status,
+        objectives: parseQuestObjectives(data.objectives),
+    };
+    const level = finiteNumber(data.level);
+    if (level !== undefined && level >= 0) {
+        record.level = level;
+    }
+    const deadline = finiteNumber(data.deadline);
+    if (deadline !== undefined && deadline >= 0) {
+        record.deadline = deadline;
+    }
+    return record;
+};
+
+const parseQuestRecords = (value: unknown, limit: number): QuestRecord[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const seen = new Set<string>();
+    return value
+        .slice(0, limit)
+        .map(parseQuestRecord)
+        .filter((record): record is QuestRecord => {
+            if (!record || seen.has(record.quest_id)) {
+                return false;
+            }
+            seen.add(record.quest_id);
+            return true;
+        });
+};
+
+const parseQuestStats = (value: unknown): QuestStats => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+    }
+    const data = value as Record<string, unknown>;
+    const stats: QuestStats = {};
+    (['traditional_completed', 'mirror_completed', 'active_count', 'completed_count'] as const).forEach((key) => {
+        const count = nonNegativeInteger(data[key]);
+        if (count !== undefined) {
+            stats[key] = count;
+        }
+    });
+    return stats;
+};
+
+export const toQuestListSnapshot = (payload: unknown): QuestListSnapshot | null => {
+    const data = snapshotHeader(payload);
+    if (!data || !Array.isArray(data.quests) || !Array.isArray(data.completed)) {
+        return null;
+    }
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        quests: parseQuestRecords(data.quests, 200),
+        completed: parseQuestRecords(data.completed, 300),
+        stats: parseQuestStats(data.stats),
+    };
+};
+
+const chatKinds = new Set<ChatKind>(['channel', 'say', 'tell', 'reply']);
+const chatDirections = new Set<ChatDirection>(['in', 'out']);
+
+const parseChatActor = (value: unknown): ChatActor | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+    const data = value as Record<string, unknown>;
+    const name = safeDisplayText(data.name, 256);
+    if (!name) {
+        return null;
+    }
+    const actor: ChatActor = { name };
+    if (data.id !== undefined) {
+        const id = safeDisplayText(data.id, 128);
+        if (id) {
+            actor.id = id;
+        }
+    }
+    return actor;
+};
+
+export const toChatMessage = (payload: unknown): ChatMessage | null => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return null;
+    }
+    const data = payload as Record<string, unknown>;
+    const timestamp = finiteNumber(data.timestamp);
+    const kind = typeof data.kind === 'string' && chatKinds.has(data.kind as ChatKind)
+        ? data.kind as ChatKind
+        : null;
+    const direction = typeof data.direction === 'string' && chatDirections.has(data.direction as ChatDirection)
+        ? data.direction as ChatDirection
+        : null;
+    const sender = parseChatActor(data.sender);
+    const text = safeDisplayText(data.text, 2048);
+    if (data.version !== 1 || typeof data.message_id !== 'string' ||
+        !chatMessageIdPattern.test(data.message_id) || timestamp === undefined || timestamp < 0 ||
+        !kind || !direction || !sender || !text) {
+        return null;
+    }
+    if (kind === 'channel' && (typeof data.channel !== 'string' || !chatChannelPattern.test(data.channel))) {
+        return null;
+    }
+    const message: ChatMessage = {
+        version: 1,
+        message_id: data.message_id,
+        timestamp,
+        kind,
+        direction,
+        sender,
+        text,
+    };
+    if (kind === 'channel') {
+        message.channel = data.channel as string;
+    }
+    if (data.recipient !== undefined) {
+        const recipient = parseChatActor(data.recipient);
+        if (recipient) {
+            message.recipient = recipient;
+        }
+    }
+    const emote = booleanFlag(data.emote);
+    if (emote !== undefined) {
+        message.emote = emote;
+    }
+    return message;
+};
+
+export const toChatCapabilitiesSnapshot = (payload: unknown): ChatCapabilities | null => {
+    const data = snapshotHeader(payload);
+    if (!data || !Array.isArray(data.channels)) {
+        return null;
+    }
+    const canSay = booleanFlag(data.can_say);
+    const canTell = booleanFlag(data.can_tell);
+    const canReply = booleanFlag(data.can_reply);
+    const maxText = nonNegativeInteger(data.max_text, 4096);
+    if (canSay === undefined || canTell === undefined || canReply === undefined ||
+        maxText === undefined || maxText < 1) {
+        return null;
+    }
+    const seen = new Set<string>();
+    const channels = data.channels
+        .slice(0, 64)
+        .map((value): ChatChannel | null => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                return null;
+            }
+            const channel = value as Record<string, unknown>;
+            const id = typeof channel.id === 'string' && chatChannelPattern.test(channel.id)
+                ? channel.id
+                : null;
+            const name = safeDisplayText(channel.name, 256);
+            const canSend = booleanFlag(channel.can_send);
+            if (!id || !name || canSend === undefined) {
+                return null;
+            }
+            return { id, name, can_send: canSend };
+        })
+        .filter((channel): channel is ChatChannel => {
+            if (!channel || seen.has(channel.id)) {
+                return false;
+            }
+            seen.add(channel.id);
+            return true;
+        });
+    return {
+        version: data.version as number,
+        snapshot: true,
+        revision: data.revision as number,
+        sequence: data.sequence as number,
+        channels,
+        can_say: canSay,
+        can_tell: canTell,
+        can_reply: canReply,
+        max_text: maxText,
+    };
+};
+
+const safeChatInput = (value: string): boolean =>
+    typeof value === 'string' && value.length > 0 && value.length <= 2048 && !/[\r\n]/.test(value);
+
+export const toWebChatSendRequest = (
+    kind: ChatKind,
+    text: string,
+    options: {
+        channel?: string;
+        targetEntityId?: string;
+        emote?: boolean;
+    } = {},
+): WebChatSendRequest | null => {
+    if (!chatKinds.has(kind) || !safeChatInput(text)) {
+        return null;
+    }
+    if (kind === 'say') {
+        return { kind, text };
+    }
+    if (kind === 'reply') {
+        return { kind, text };
+    }
+    if (kind === 'tell') {
+        return options.targetEntityId && entityIdPattern.test(options.targetEntityId)
+            ? { kind, target_entity_id: options.targetEntityId, text }
+            : null;
+    }
+    if (!options.channel || !chatChannelPattern.test(options.channel) ||
+        (options.emote !== undefined && typeof options.emote !== 'boolean')) {
+        return null;
+    }
+    return options.emote === undefined
+        ? { kind, channel: options.channel, text }
+        : { kind, channel: options.channel, text, emote: options.emote };
 };
 
 const parseSkillAssignment = (value: unknown): SkillAssignment | null => {

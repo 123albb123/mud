@@ -719,6 +719,39 @@ button:disabled {
     font-size: 11px;
 }
 
+.feature-entrypoints {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.feature-entrypoints button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #664733;
+    border-radius: 6px;
+    color: #e1c291;
+    background: #2a1b11;
+    font-size: 12px;
+}
+
+.feature-entrypoints button:hover,
+.feature-entrypoints button.active {
+    border-color: #b27c42;
+    color: #ffe0a1;
+    background: #3b2616;
+}
+
+.feature-entrypoints button span:last-child {
+    color: #a78b65;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 11px;
+}
+
 .item-drawer {
     position: absolute;
     z-index: 7;
@@ -766,6 +799,340 @@ button:disabled {
     overflow: auto;
     padding: 14px;
     background: #17120e;
+}
+
+.feature-drawer {
+    width: min(680px, calc(100% - 24px));
+}
+
+.chat-drawer {
+    width: min(760px, calc(100% - 24px));
+}
+
+.feature-panel {
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+    background: #17120e;
+}
+
+.feature-panel-heading,
+.quest-group-heading,
+.chat-message-meta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.feature-panel-heading {
+    margin-bottom: 12px;
+}
+
+.feature-panel-heading h2,
+.feature-panel-heading p,
+.quest-group-heading h3,
+.quest-group-heading span,
+.quest-card p,
+.quest-card small,
+.chat-message p,
+.chat-message small,
+.feature-empty-state,
+.quest-empty-group {
+    margin: 0;
+}
+
+.feature-panel-heading h2 {
+    color: #e7cf9e;
+    font-family: "STKaiti", "KaiTi", serif;
+    font-size: 22px;
+    font-weight: 500;
+}
+
+.feature-count {
+    padding: 4px 8px;
+    border: 1px solid #443624;
+    border-radius: 20px;
+    color: #a89476;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.feature-empty-state,
+.quest-empty-group {
+    color: #8e806e;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.quest-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-bottom: 16px;
+}
+
+.quest-stats span {
+    padding: 4px 8px;
+    border: 1px solid #403120;
+    border-radius: 5px;
+    color: #b9aa94;
+    background: #120e0b;
+    font-size: 11px;
+}
+
+.quest-group + .quest-group {
+    margin-top: 20px;
+}
+
+.quest-group-heading {
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.quest-group-heading h3 {
+    color: #ddc28e;
+    font-family: "STKaiti", "KaiTi", serif;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.quest-group-heading span {
+    color: #82745f;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 11px;
+}
+
+.quest-card {
+    margin-bottom: 7px;
+    border: 1px solid #30261b;
+    border-radius: 7px;
+    background: #120e0b;
+}
+
+.quest-card.quest-active {
+    border-color: #5d482d;
+}
+
+.quest-card.quest-failed {
+    border-color: #6a3a34;
+}
+
+.quest-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-width: 0;
+    gap: 10px;
+    padding: 10px;
+    border: 0;
+    border-radius: inherit;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+}
+
+.quest-card-heading:hover {
+    background: #21180f;
+}
+
+.quest-card-title {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.quest-card-title strong {
+    overflow: hidden;
+    color: #e6d5b4;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.quest-card-title small,
+.quest-card-detail small {
+    color: #80735f;
+    font-size: 11px;
+}
+
+.quest-card-status {
+    flex: 0 0 auto;
+    color: #d6ae68;
+    font-size: 11px;
+}
+
+.quest-completed .quest-card-status {
+    color: #8bb691;
+}
+
+.quest-failed .quest-card-status {
+    color: #df8275;
+}
+
+.quest-card-detail {
+    display: grid;
+    gap: 7px;
+    padding: 0 10px 11px;
+    color: #b9aa94;
+    font-size: 12px;
+    line-height: 1.65;
+}
+
+.quest-card-detail p {
+    white-space: pre-wrap;
+}
+
+.quest-card-detail ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.quest-card-detail li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 7px;
+    border-radius: 4px;
+    color: #cbb993;
+    background: #1c150f;
+}
+
+.quest-card-detail em {
+    color: #e2c17e;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-style: normal;
+    white-space: nowrap;
+}
+
+.chat-panel {
+    display: grid;
+    grid-template-rows: auto minmax(150px, 1fr) auto;
+    gap: 12px;
+}
+
+.chat-feed {
+    min-height: 150px;
+    max-height: min(54dvh, 560px);
+    overflow: auto;
+    padding: 5px;
+    border: 1px solid #30261b;
+    border-radius: 7px;
+    background: #0e0b09;
+}
+
+.chat-message {
+    margin: 0 0 7px;
+    padding: 8px 9px;
+    border-left: 2px solid #715533;
+    color: #cbb993;
+    background: #17110d;
+}
+
+.chat-message.out {
+    border-left-color: #9b7040;
+    background: #21170f;
+}
+
+.chat-message-meta {
+    align-items: baseline;
+    margin-bottom: 3px;
+}
+
+.chat-message-meta strong {
+    color: #e6d5b4;
+    font-size: 12px;
+}
+
+.chat-message-meta span,
+.chat-message small {
+    color: #7d705e;
+    font-size: 10px;
+}
+
+.chat-message p {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.chat-composer {
+    display: grid;
+    gap: 8px;
+}
+
+.chat-kind-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chat-kind-tabs button {
+    min-height: 34px;
+    padding: 5px 10px;
+    border: 1px solid #4c4031;
+    border-radius: 5px;
+    color: #a99475;
+    background: #120e0b;
+    font-size: 11px;
+}
+
+.chat-kind-tabs button.active,
+.chat-kind-tabs button:hover {
+    border-color: #8d663e;
+    color: #f0d59e;
+    background: #2a1d12;
+}
+
+.chat-kind-tabs button:disabled {
+    opacity: 0.45;
+}
+
+.chat-field {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    color: #927e60;
+    font-size: 11px;
+}
+
+.chat-field select,
+.chat-input-row input {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 7px 9px;
+    border: 1px solid #4f3d29;
+    border-radius: 5px;
+    outline: none;
+    color: #f0e3cc;
+    background: #090806;
+    font-size: 13px;
+}
+
+.chat-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+}
+
+.chat-input-row button {
+    min-width: 64px;
+    padding: 6px 12px;
+    border: 1px solid #9b7040;
+    border-radius: 5px;
+    color: #1a130b;
+    background: #c59a58;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.chat-input-row button:disabled {
+    opacity: 0.45;
 }
 
 .skills-summary {
@@ -1253,6 +1620,11 @@ button:disabled {
         grid-column: 1 / -1;
     }
 
+    .item-entrypoints,
+    .feature-entrypoints {
+        grid-column: 1 / -1;
+    }
+
     .entity-list {
         max-height: 145px;
     }
@@ -1359,6 +1731,14 @@ button:disabled {
         right: 7px;
         width: calc(100% - 14px);
         max-height: calc(100% - 14px);
+    }
+
+    .feature-panel {
+        padding: 12px;
+    }
+
+    .chat-feed {
+        max-height: 42dvh;
     }
 
     .item-panel {

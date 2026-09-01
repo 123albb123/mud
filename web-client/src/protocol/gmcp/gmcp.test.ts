@@ -4,6 +4,8 @@ import {
     GMCP_INITIAL_GETS,
     GMCP_SUPPORTS,
     parseGMCP,
+    toChatCapabilitiesSnapshot,
+    toChatMessage,
     toCharacterVitals,
     toCharacterStatus,
     toCombatActionsSnapshot,
@@ -16,7 +18,9 @@ import {
     toWebEntityGiveRequest,
     toWebItemActionRequest,
     toWebCombatActionRequest,
+    toWebChatSendRequest,
     toWebSkillActionRequest,
+    toQuestListSnapshot,
     toSkillsSnapshot,
 } from './gmcp';
 
@@ -64,7 +68,7 @@ describe('GMCP codec', () => {
     it('uses client-directed Core.Hello and standard Core.Supports.Set strings', () => {
         expect(GMCP_CLIENT_HELLO).toEqual({
             client: 'Yanhuang Web',
-            version: '0.2.1',
+            version: '0.5.0',
         });
         expect(GMCP_SUPPORTS).toEqual([
             'Char.Vitals 1',
@@ -76,6 +80,9 @@ describe('GMCP codec', () => {
             'Char.Skills 1',
             'Combat.State 1',
             'Combat.Actions 1',
+            'Quest.List 1',
+            'Chat.Message 1',
+            'Chat.Capabilities 1',
         ]);
         expect(GMCP_INITIAL_GETS).toEqual([
             'Char.Vitals.Get',
@@ -87,6 +94,8 @@ describe('GMCP codec', () => {
             'Char.Skills.Get',
             'Combat.State.Get',
             'Combat.Actions.Get',
+            'Quest.List.Get',
+            'Chat.Capabilities.Get',
         ]);
     });
 
@@ -327,5 +336,100 @@ describe('GMCP codec', () => {
         expect(toWebCombatActionRequest('perform:/tmp:chan')).toBeNull();
         expect(toWebCombatActionRequest('kill\nlook', 'e-session-0001')).toBeNull();
         expect(toWebCombatActionRequest('kill', 'e-session-0001\n')).toBeNull();
+    });
+
+    it('normalizes real task snapshots without accepting paths or unbounded text', () => {
+        const snapshot = toQuestListSnapshot({
+            version: 1,
+            snapshot: 1,
+            revision: 4,
+            sequence: 4,
+            quests: [{
+                quest_id: 'q-session-0001',
+                system: 'quest2',
+                category: 'quest2',
+                title: '幻境心魔',
+                detail: '斩杀心魔。\n当前进度。',
+                status: 'active',
+                objectives: [{ kind: 'kill', title: '心魔', current: 3, required: 20 }],
+                internal_path: '/adm/daemons/quest/_0_tutorial7.c',
+            }],
+            completed: [{
+                quest_id: 'q-session-0002',
+                system: 'daily',
+                category: 'daily',
+                title: '祈福',
+                detail: '已完成',
+                status: 'completed',
+                objectives: [],
+            }],
+            stats: { traditional_completed: 8, ignored: '/tmp' },
+        });
+        expect(snapshot?.quests[0]).toMatchObject({
+            quest_id: 'q-session-0001',
+            detail: '斩杀心魔。\n当前进度。',
+            objectives: [{ kind: 'kill', current: 3, required: 20 }],
+        });
+        expect(snapshot?.quests[0]).not.toHaveProperty('internal_path');
+        expect(snapshot?.stats).toEqual({ traditional_completed: 8 });
+        expect(toQuestListSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 1,
+            sequence: Number.NaN,
+            quests: [],
+            completed: [],
+        })).toBeNull();
+    });
+
+    it('validates structured chat events and capability snapshots safely', () => {
+        const message = toChatMessage({
+            version: 1,
+            message_id: 'm-session-0001',
+            timestamp: 123,
+            kind: 'channel',
+            direction: 'in',
+            sender: { name: '侠客', id: 'xia' },
+            channel: 'chat',
+            text: '你好',
+            hidden_path: '/clone/user/user.c',
+        });
+        expect(message).toMatchObject({ kind: 'channel', sender: { name: '侠客' }, text: '你好' });
+        expect(toChatMessage({
+            version: 1,
+            message_id: 'm-session-0002',
+            timestamp: 123,
+            kind: 'say',
+            direction: 'out',
+            sender: { name: '侠客' },
+            text: '不允许\n注入',
+        })).toBeNull();
+        expect(toChatCapabilitiesSnapshot({
+            version: 1,
+            snapshot: true,
+            revision: 2,
+            sequence: 2,
+            channels: [
+                { id: 'chat', name: '闲聊', can_send: true },
+                { id: 'chat', name: '重复', can_send: false },
+                { id: '/tmp', name: '坏频道', can_send: true },
+            ],
+            can_say: 1,
+            can_tell: true,
+            can_reply: false,
+            max_text: 2048,
+        })?.channels).toEqual([{ id: 'chat', name: '闲聊', can_send: true }]);
+    });
+
+    it('builds only fixed, newline-free chat send requests', () => {
+        expect(toWebChatSendRequest('channel', '你好', { channel: 'chat' })).toEqual({
+            kind: 'channel', channel: 'chat', text: '你好',
+        });
+        expect(toWebChatSendRequest('tell', '在吗', { targetEntityId: 'e-session-0001' })).toEqual({
+            kind: 'tell', target_entity_id: 'e-session-0001', text: '在吗',
+        });
+        expect(toWebChatSendRequest('say', '坏\n命令')).toBeNull();
+        expect(toWebChatSendRequest('channel', '你好', { channel: '/cmds/std/say' })).toBeNull();
+        expect(toWebChatSendRequest('tell', '你好', { targetEntityId: 'player-name' })).toBeNull();
     });
 });

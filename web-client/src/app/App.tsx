@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { CharacterPanel } from '../features/character/CharacterPanel';
 import { CombatPanel } from '../features/combat/CombatPanel';
+import { ChatPanel } from '../features/chat/ChatPanel';
 import { EquipmentPanel } from '../features/equipment/EquipmentPanel';
 import { InventoryPanel } from '../features/inventory/InventoryPanel';
 import { RoomEntities } from '../features/room/RoomEntities';
 import { RoomPanel } from '../features/room/RoomPanel';
+import { QuestPanel } from '../features/quests/QuestPanel';
 import { SkillsPanel } from '../features/skills/SkillsPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
 import { Terminal } from '../features/terminal/Terminal';
@@ -22,7 +24,7 @@ export const App = () => {
     const client = useMudClient();
     const [url, setUrl] = useState(defaultMudUrl);
     const [showDebug, setShowDebug] = useState(false);
-    const [activePanel, setActivePanel] = useState<'inventory' | 'equipment' | 'skills' | null>(null);
+    const [activePanel, setActivePanel] = useState<'inventory' | 'equipment' | 'skills' | 'quests' | 'chat' | null>(null);
     const autoConnectStarted = useRef(false);
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
@@ -122,6 +124,26 @@ export const App = () => {
                             <span>{client.skills.length}</span>
                         </button>
                     </div>
+                    <div className="feature-entrypoints" aria-label="江湖功能">
+                        <button
+                            aria-pressed={activePanel === 'quests'}
+                            className={activePanel === 'quests' ? 'active' : ''}
+                            onClick={() => setActivePanel(activePanel === 'quests' ? null : 'quests')}
+                            type="button"
+                        >
+                            <span>任务</span>
+                            <span>{client.quests?.quests.length ?? 0}</span>
+                        </button>
+                        <button
+                            aria-pressed={activePanel === 'chat'}
+                            className={activePanel === 'chat' ? 'active' : ''}
+                            onClick={() => setActivePanel(activePanel === 'chat' ? null : 'chat')}
+                            type="button"
+                        >
+                            <span>消息</span>
+                            <span>{client.chatMessages.length}</span>
+                        </button>
+                    </div>
                 </aside>
                 <Terminal segments={client.segments} />
                 {activePanel === 'inventory' && (
@@ -157,6 +179,30 @@ export const App = () => {
                             onAction={client.sendSkillAction}
                             skills={client.skills}
                             status={client.status}
+                        />
+                    </aside>
+                )}
+                {activePanel === 'quests' && (
+                    <aside className="item-drawer feature-drawer" aria-label="任务面板">
+                        <div className="drawer-heading">
+                            <strong>任务志</strong>
+                            <button onClick={() => setActivePanel(null)} type="button">关闭</button>
+                        </div>
+                        <QuestPanel snapshot={client.quests} />
+                    </aside>
+                )}
+                {activePanel === 'chat' && (
+                    <aside className="item-drawer feature-drawer chat-drawer" aria-label="聊天面板">
+                        <div className="drawer-heading">
+                            <strong>江湖消息</strong>
+                            <button onClick={() => setActivePanel(null)} type="button">关闭</button>
+                        </div>
+                        <ChatPanel
+                            capabilities={client.chatCapabilities}
+                            connected={connected}
+                            entities={client.entities}
+                            messages={client.chatMessages}
+                            onSend={client.sendChat}
                         />
                     </aside>
                 )}

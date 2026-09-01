@@ -73,6 +73,11 @@ int main(object me, string arg)
     if (!notice_user(me->name(1), my_id, obj, tell_out))
         return 1;
 
+    if (function_exists("gmcp_chat_private_message", me))
+        catch(me->gmcp_chat_private_message("tell", me, obj, msg));
+    if (function_exists("gmcp_chat_private_message", obj))
+        catch(obj->gmcp_chat_private_message("tell", me, obj, msg));
+
     write(sprintf(HIG "你告诉%s(%s)：%s\n" NOR,
                   obj->name(1) + HIG,
                   capitalize(obj->query("id")), msg));

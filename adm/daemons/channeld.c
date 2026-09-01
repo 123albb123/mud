@@ -170,6 +170,153 @@ void create()
     set("channel_id", "频道精灵");
 }
 
+private int web_channel_permission(object me, string verb)
+{
+    string only;
+
+    if (!objectp(me) || !mapp(channels) || undefinedp(channels[verb]))
+        return 0;
+    if (me->is_chatter())
+        return 0;
+
+    if (playerp(me) && !wizardp(me))
+    {
+        if (!me->query("registered"))
+            return 0;
+        if (verb == "ic" && me->query("age") < 18)
+            return 0;
+        if (verb == "rumor" && me->query("age") < 30)
+            return 0;
+        if (verb == "ultra" && !ultrap(me))
+            return 0;
+    }
+
+    if (channels[verb]["for_listen"])
+        return 0;
+
+    only = channels[verb]["only"];
+    switch (only)
+    {
+    case "wiz":
+        return wiz_level(me) >= 3;
+    case "arch":
+        return wiz_level(me) >= 4;
+    case "party":
+        return stringp(me->query("party/party_name"));
+    case "family":
+        return stringp(me->query("family/family_name"));
+    case "league":
+        return stringp(me->query("league/league_name"));
+    }
+    return 1;
+}
+
+int query_web_channel(object me, string verb)
+{
+    return web_channel_permission(me, verb);
+}
+
+mapping query_web_capabilities(object me)
+{
+    mixed *result;
+    mixed *verbs;
+    mapping channel;
+    mapping record;
+    object room;
+    string verb;
+    string name;
+    int i;
+
+    result = ({});
+    if (!objectp(me) || !mapp(channels))
+        return (["channels": result, "can_say": 0, "can_tell": 0,
+                 "can_reply": 0]);
+
+    verbs = sort_array(keys(channels), (: strcmp :));
+    for (i = 0; i < sizeof(verbs); i++)
+    {
+        verb = verbs[i];
+        channel = channels[verb];
+        name = channel["name"];
+        if (!stringp(name) || name == "")
+            name = verb;
+        name = remove_ansi(name);
+        record = ([
+            "id"       : verb,
+            "name"     : name,
+            "can_send" : web_channel_permission(me, verb),
+        ]);
+        result += ({record});
+    }
+
+    room = environment(me);
+    return ([
+        "channels" : result,
+        "can_say"  : !me->is_chatter() && objectp(room) &&
+                     !room->query("no_say"),
+        "can_tell" : !me->is_chatter(),
+        "can_reply" : !me->is_chatter() &&
+                      stringp(me->query_temp("reply")),
+    ]);
+}
+
+private string web_channel_sender_name(object me, string verb)
+{
+    mixed value;
+
+    if (mapp(channels[verb]) && stringp(channels[verb]["anonymous"]))
+        return remove_ansi(channels[verb]["anonymous"]);
+    if (objectp(me) && !catch(value = me->name(1)) && stringp(value))
+        return remove_ansi(value);
+    if (objectp(me) && !catch(value = me->short()) && stringp(value))
+        return remove_ansi(value);
+    return "某人";
+}
+
+private string web_channel_sender_id(object me)
+{
+    mixed value;
+
+    if (objectp(me) && userp(me) &&
+        !catch(value = me->query("id")) && stringp(value))
+        return remove_ansi(value);
+    return "";
+}
+
+private void deliver_web_channel_message(string channel, object sender,
+                                         string sender_name,
+                                         string sender_id, string text,
+                                         int emote, object *obs)
+{
+    object receiver;
+    string *tuned;
+    int i;
+
+    if (!stringp(channel) || !pointerp(obs))
+        return;
+    for (i = 0; i < sizeof(obs); i++)
+    {
+        receiver = obs[i];
+        if (!objectp(receiver) || !userp(receiver) ||
+            !function_exists("gmcp_chat_channel_message", receiver))
+            continue;
+        if (channel != "shout")
+        {
+            tuned = receiver->query("channels");
+            if (!pointerp(tuned) ||
+                (member_array(channel, tuned) == -1 &&
+                 !(channel == "chat" && member_array("ultra", tuned) != -1)))
+                continue;
+        }
+        if (receiver->query_temp("block_msg/all") ||
+            receiver->query_temp("block_msg/" + channel))
+            continue;
+        catch(receiver->gmcp_chat_channel_message(channel, sender,
+                                                  sender_name, sender_id,
+                                                  text, emote));
+    }
+}
+
 // 记录频道消息的日志
 void channel_log(string msg, string verb, object user)
 {
@@ -218,6 +365,10 @@ void do_remote_channel(object me, string verb, string arg)
 
     msg = sprintf(channels[verb]["msg_emote"], arg);
     message("channel:" + verb, msg, obs);
+    deliver_web_channel_message(verb, me, web_channel_sender_name(me, verb),
+                                mapp(channels[verb]) && channels[verb]["anonymous"]
+                                ? "" : web_channel_sender_id(me),
+                                arg, 1, obs);
     channel_log(msg, verb, me);
 
     // 向各个站点发送EMOTE信息
@@ -234,6 +385,9 @@ varargs int do_channel(object me, string verb, string arg, int emote)
     int is_player;
     string imsg = 0, local;
     string msg;
+    string web_channel;
+    string web_sender_name;
+    string web_sender_id;
 
     string party;
     string family;
@@ -286,6 +440,11 @@ varargs int do_channel(object me, string verb, string arg, int emote)
     }
     else if (is_player && verb == "ultra")
         return notify_fail("等你成了大宗师再使用这个频道吧！\n");
+
+    web_channel = verb;
+    web_sender_name = web_channel_sender_name(me, verb);
+    web_sender_id = channels[verb]["anonymous"] ? "" :
+                    web_channel_sender_id(me);
 
     // player broadcasting need consume jing
     if (userp(me) && !wizardp(me) && verb == "rumor" &&
@@ -412,6 +571,9 @@ varargs int do_channel(object me, string verb, string arg, int emote)
         msg = HIW + me->name(1) + "纵声长啸：" + arg + "\n" + NOR;
         shout(msg);
         write(HIW + "你纵声长啸：" + arg + "\n" + NOR);
+        obs = all_interactive();
+        deliver_web_channel_message(web_channel, me, web_sender_name,
+                                    web_sender_id, arg, 0, obs);
         channel_log(msg, verb, me);
         return 1;
     }
@@ -547,12 +709,16 @@ varargs int do_channel(object me, string verb, string arg, int emote)
         msg = sprintf(channels[verb]["msg_emote"],
                       sprintf(localmsg, ecol, ecol, ecol));
         message("channel:" + ((verb == "ultra") ? "chat" : verb), msg, obs);
+        deliver_web_channel_message(web_channel, me, web_sender_name,
+                                    web_sender_id, arg, 1, obs);
         channel_log(msg, verb, me);
     }
     else
     {
         msg = sprintf(channels[verb]["msg_speak"], who, arg);
         message("channel:" + ((verb == "ultra") ? "chat" : verb), msg, obs);
+        deliver_web_channel_message(web_channel, me, web_sender_name,
+                                    web_sender_id, arg, 0, obs);
         channel_log(msg, verb, me);
     }
     // 同步消息到QQ群

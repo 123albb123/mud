@@ -19,7 +19,14 @@ import {
     toInventorySnapshot,
     toRoomInfo,
     toSkillsSnapshot,
+    toQuestListSnapshot,
+    toChatCapabilitiesSnapshot,
+    toChatMessage,
+    toWebChatSendRequest,
     type CharacterStatus,
+    type ChatKind,
+    type ChatMessage,
+    type ChatCapabilities,
     type CombatTargetMode,
     type CharacterSkill,
     type CombatAction,
@@ -29,6 +36,7 @@ import {
     type InventoryItem,
     type RoomEntity,
     type RoomInfo,
+    type QuestListSnapshot,
 } from '../protocol/gmcp/gmcp';
 import { TelnetParser } from '../protocol/telnet/TelnetParser';
 import { MudConnection, type ConnectionState } from '../protocol/websocket/MudConnection';
@@ -61,6 +69,9 @@ export const useMudClient = () => {
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [equipment, setEquipment] = useState<EquipmentSlot[]>([]);
     const [equipmentSlotOrder, setEquipmentSlotOrder] = useState<string[]>([]);
+    const [quests, setQuests] = useState<QuestListSnapshot | null>(null);
+    const [chatCapabilities, setChatCapabilities] = useState<ChatCapabilities | null>(null);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [serverSensitive, setServerSensitive] = useState(false);
     const [debugEntries, setDebugEntries] = useState<ProtocolDebugEntry[]>([]);
     const connectionRef = useRef<MudConnection | null>(null);
@@ -76,6 +87,9 @@ export const useMudClient = () => {
     const combatRevisionRef = useRef(-1);
     const skillsRevisionRef = useRef(-1);
     const combatActionsRevisionRef = useRef(-1);
+    const questsRevisionRef = useRef(-1);
+    const chatCapabilitiesRevisionRef = useRef(-1);
+    const chatMessageIdsRef = useRef(new Set<string>());
     const gmcpStateRequestedRef = useRef(false);
 
     const requestGMCPState = useCallback(() => {
@@ -173,6 +187,27 @@ export const useMudClient = () => {
                 setEquipment(nextEquipment.slots);
                 setEquipmentSlotOrder(nextEquipment.slot_order);
             }
+        } else if (message.packageName === 'Quest.List') {
+            const nextQuests = toQuestListSnapshot(message.payload);
+            if (nextQuests && nextQuests.revision >= questsRevisionRef.current) {
+                questsRevisionRef.current = nextQuests.revision;
+                setQuests(nextQuests);
+            }
+        } else if (message.packageName === 'Chat.Capabilities') {
+            const nextCapabilities = toChatCapabilitiesSnapshot(message.payload);
+            if (nextCapabilities && nextCapabilities.revision >= chatCapabilitiesRevisionRef.current) {
+                chatCapabilitiesRevisionRef.current = nextCapabilities.revision;
+                setChatCapabilities(nextCapabilities);
+            }
+        } else if (message.packageName === 'Chat.Message') {
+            const nextMessage = toChatMessage(message.payload);
+            if (nextMessage && !chatMessageIdsRef.current.has(nextMessage.message_id)) {
+                chatMessageIdsRef.current.add(nextMessage.message_id);
+                setChatMessages((current) => [...current, nextMessage].slice(-600));
+                if (chatMessageIdsRef.current.size > 1000) {
+                    chatMessageIdsRef.current.clear();
+                }
+            }
         }
     }, [appendDebug, requestGMCPState]);
 
@@ -207,6 +242,9 @@ export const useMudClient = () => {
                     combatRevisionRef.current = -1;
                     skillsRevisionRef.current = -1;
                     combatActionsRevisionRef.current = -1;
+                    questsRevisionRef.current = -1;
+                    chatCapabilitiesRevisionRef.current = -1;
+                    chatMessageIdsRef.current.clear();
                     gmcpStateRequestedRef.current = false;
                     setVitals(null);
                     setStatus(null);
@@ -218,6 +256,9 @@ export const useMudClient = () => {
                     setInventory([]);
                     setEquipment([]);
                     setEquipmentSlotOrder([]);
+                    setQuests(null);
+                    setChatCapabilities(null);
+                    setChatMessages([]);
                 } else if (state === 'closed') {
                     setVitals(null);
                     setStatus(null);
@@ -229,6 +270,12 @@ export const useMudClient = () => {
                     setInventory([]);
                     setEquipment([]);
                     setEquipmentSlotOrder([]);
+                    questsRevisionRef.current = -1;
+                    chatCapabilitiesRevisionRef.current = -1;
+                    chatMessageIdsRef.current.clear();
+                    setQuests(null);
+                    setChatCapabilities(null);
+                    setChatMessages([]);
                 }
             },
             onData: (bytes) => parser.push(bytes),
@@ -267,6 +314,9 @@ export const useMudClient = () => {
         setInventory([]);
         setEquipment([]);
         setEquipmentSlotOrder([]);
+        setQuests(null);
+        setChatCapabilities(null);
+        setChatMessages([]);
         inventoryRevisionRef.current = -1;
         equipmentRevisionRef.current = -1;
         entitiesRevisionRef.current = -1;
@@ -275,6 +325,9 @@ export const useMudClient = () => {
         combatRevisionRef.current = -1;
         skillsRevisionRef.current = -1;
         combatActionsRevisionRef.current = -1;
+        questsRevisionRef.current = -1;
+        chatCapabilitiesRevisionRef.current = -1;
+        chatMessageIdsRef.current.clear();
         gmcpStateRequestedRef.current = false;
         setServerSensitive(false);
         connectionRef.current?.connect(url, ['telnet']);
@@ -339,6 +392,19 @@ export const useMudClient = () => {
         parser.sendGMCP('Web.Combat.Action', request);
     }, []);
 
+    const sendChat = useCallback((
+        kind: ChatKind,
+        text: string,
+        options?: { channel?: string; targetEntityId?: string; emote?: boolean },
+    ) => {
+        const parser = parserRef.current;
+        const request = toWebChatSendRequest(kind, text, options);
+        if (!parser || !request) {
+            return;
+        }
+        parser.sendGMCP('Web.Chat.Send', request);
+    }, []);
+
     return {
         connectionState,
         connectionDetail,
@@ -353,6 +419,9 @@ export const useMudClient = () => {
         inventory,
         equipment,
         equipmentSlotOrder,
+        quests,
+        chatCapabilities,
+        chatMessages,
         serverSensitive,
         debugEntries,
         connect,
@@ -363,5 +432,6 @@ export const useMudClient = () => {
         sendEntityGive,
         sendSkillAction,
         sendCombatAction,
+        sendChat,
     };
 };

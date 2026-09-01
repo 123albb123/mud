@@ -7,7 +7,9 @@ inherit F_CLEAN_UP;
 int main(object me, string arg)
 {
     object env, *obs;
+    object receiver;
     mixed msg;
+    int i;
 
     if (me->ban_say(1))
         return 0;
@@ -57,6 +59,16 @@ int main(object me, string arg)
 
     // The mudlib interface of say
     obs->relay_say(me, arg);
+    if (userp(me) && function_exists("gmcp_chat_say_message", me))
+        catch(me->gmcp_chat_say_message(me, arg));
+    for (i = 0; i < sizeof(obs); i++)
+    {
+        receiver = obs[i];
+        if (receiver == me || !objectp(receiver) || !userp(receiver) ||
+            !function_exists("gmcp_chat_say_message", receiver))
+            continue;
+        catch(receiver->gmcp_chat_say_message(me, arg));
+    }
 
     return 1;
 }
