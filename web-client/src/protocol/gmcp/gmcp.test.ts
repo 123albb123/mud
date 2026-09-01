@@ -24,6 +24,7 @@ import {
     toQuestListSnapshot,
     toSkillsSnapshot,
     toRoomMapSnapshot,
+    toRoomMapTransition,
     toWebRoomMoveRequest,
 } from './gmcp';
 
@@ -144,6 +145,55 @@ describe('GMCP codec', () => {
         expect(toWebRoomMoveRequest('x-session-0001\nlook')).toBeNull();
     });
 
+    it('accepts only ordered-safe Room.Map.Transition payloads', () => {
+        expect(toRoomMapTransition({
+            version: 1,
+            sequence: 7,
+            from_room_id: 'r-session-0001',
+            to_room_id: 'r-session-0002',
+            command: 'northup',
+            label: '北上',
+            kind: 'move',
+            area: 1,
+        })).toEqual({
+            version: 1,
+            sequence: 7,
+            from_room_id: 'r-session-0001',
+            to_room_id: 'r-session-0002',
+            command: 'northup',
+            label: '北上',
+            kind: 'move',
+            area: true,
+        });
+        expect(toRoomMapTransition({
+            version: 1,
+            sequence: 0,
+            from_room_id: 'r-session-0001',
+            to_room_id: 'r-session-0002',
+            command: 'north',
+            label: '北',
+            kind: 'move',
+        })).toBeNull();
+        expect(toRoomMapTransition({
+            version: 1,
+            sequence: 8,
+            from_room_id: 'r-session-0001',
+            to_room_id: 'r-session-0002',
+            command: '/d/city/room',
+            label: '北',
+            kind: 'move',
+        })).toBeNull();
+        expect(toRoomMapTransition({
+            version: 1,
+            sequence: 9,
+            from_room_id: 'r-session-0001',
+            to_room_id: 'r-session-0002',
+            command: 'north',
+            label: '北\n坏',
+            kind: 'move',
+        })).toBeNull();
+    });
+
     it('uses client-directed Core.Hello and standard Core.Supports.Set strings', () => {
         expect(GMCP_CLIENT_HELLO).toEqual({
             client: 'Yanhuang Web',
@@ -154,6 +204,7 @@ describe('GMCP codec', () => {
             'Char.Status 1',
             'Room.Info 1',
             'Room.Map 1',
+            'Room.Map.Transition 1',
             'Room.Entities 1',
             'Char.Inventory 1',
             'Char.Equipment 1',

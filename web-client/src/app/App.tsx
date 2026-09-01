@@ -142,7 +142,7 @@ export const App = () => {
 
     let page: ReactNode;
     if (activeView === 'map') {
-        page = <MapView connected={connected} onMove={client.sendRoomMove} snapshot={client.roomMap} />;
+        page = <MapView connected={connected} exploredMap={client.exploredMap} onMove={client.sendRoomMove} snapshot={client.roomMap} />;
     } else if (activeView === 'help') {
         page = <HelpView />;
     } else if (activeView === 'inventory') {

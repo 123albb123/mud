@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CharacterStatus, CharacterVitals, ChatMessage, QuestListSnapshot, RoomInfo, RoomMapSnapshot } from '../protocol/gmcp/gmcp';
+import { createEmptyExploredMapGraph } from '../features/map/exploredMap';
 import { useMudClient } from '../stores/useMudClient';
 import { App } from './App';
 
@@ -22,6 +23,7 @@ const makeClient = (overrides: Partial<ClientState> = {}): ClientState => ({
     combatActions: [],
     room: null,
     roomMap: null,
+    exploredMap: createEmptyExploredMapGraph(),
     entities: [],
     inventory: [],
     equipment: [],

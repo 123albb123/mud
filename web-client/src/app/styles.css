@@ -3162,3 +3162,522 @@ kbd,
         width: calc(100vw - 20px);
     }
 }
+
+/* Stage 6.1 session exploration graph */
+.map-board-graph {
+    min-height: min(72vh, 720px);
+    padding: 14px;
+}
+
+.map-graph-shell {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-height: 0;
+}
+
+.map-heading-stats {
+    display: grid;
+    justify-items: end;
+    gap: 5px;
+}
+
+.map-heading-stats small {
+    color: #8a806d;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.map-graph-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 35px;
+    padding: 0 2px;
+    font-family: var(--font-ui);
+}
+
+.map-graph-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 13px;
+    color: #b5a88d;
+    font-size: 10px;
+}
+
+.map-graph-summary span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+
+.map-graph-summary small {
+    color: #7c7467;
+    white-space: nowrap;
+}
+
+.map-legend-dot,
+.map-current-marker-icon {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border: 1px solid rgba(180, 139, 73, 0.68);
+    border-radius: 50%;
+    background: #6f5330;
+}
+
+.map-legend-dot.is-current,
+.map-current-marker-icon {
+    border-color: rgba(90, 208, 202, 0.92);
+    background: #45b5b0;
+    box-shadow: 0 0 8px rgba(65, 191, 185, 0.5);
+}
+
+.map-legend-dot.is-preview {
+    border-style: dashed;
+    border-color: rgba(188, 153, 92, 0.75);
+    background: transparent;
+}
+
+.map-graph-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.map-graph-controls button {
+    min-height: 30px;
+    padding: 0 9px;
+    border: 1px solid rgba(145, 112, 63, 0.38);
+    border-radius: 5px;
+    color: #bca579;
+    background: rgba(21, 29, 27, 0.78);
+    font-family: var(--font-ui);
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.map-graph-controls button:hover {
+    border-color: rgba(68, 180, 177, 0.72);
+    color: #d1ede0;
+    background: rgba(25, 72, 68, 0.74);
+}
+
+.map-graph-controls span {
+    min-width: 38px;
+    color: #8e846f;
+    font-size: 10px;
+    text-align: center;
+}
+
+.map-graph-viewport {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 385px;
+    overflow: hidden;
+    border: 1px solid rgba(111, 141, 118, 0.24);
+    border-radius: 8px;
+    background:
+        radial-gradient(circle at 50% 48%, rgba(63, 112, 101, 0.12), transparent 41%),
+        rgba(7, 13, 13, 0.48);
+    cursor: grab;
+    touch-action: none;
+}
+
+.map-graph-viewport.is-dragging {
+    cursor: grabbing;
+}
+
+.map-graph-svg {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    user-select: none;
+}
+
+.map-graph-edge {
+    fill: none;
+    stroke: rgba(83, 190, 178, 0.76);
+    stroke-width: 0.075;
+    vector-effect: non-scaling-stroke;
+}
+
+.map-graph-edge-group marker path {
+    fill: rgba(83, 190, 178, 0.86);
+}
+
+.map-graph-edge-label {
+    fill: rgba(187, 218, 191, 0.72);
+    font-family: var(--font-ui);
+    font-size: 0.23px;
+    pointer-events: none;
+    text-anchor: middle;
+}
+
+.map-graph-preview-edge {
+    fill: none;
+    stroke: rgba(179, 140, 75, 0.7);
+    stroke-dasharray: 0.16 0.12;
+    stroke-width: 0.055;
+    vector-effect: non-scaling-stroke;
+}
+
+.map-graph-preview-edge.is-visited-destination {
+    stroke: rgba(75, 181, 171, 0.58);
+}
+
+.map-graph-node,
+.map-graph-ghost-node {
+    outline: none;
+}
+
+.map-graph-node {
+    cursor: pointer;
+}
+
+.map-graph-node circle {
+    fill: rgba(102, 76, 42, 0.94);
+    stroke: rgba(211, 161, 81, 0.88);
+    stroke-width: 0.08;
+    vector-effect: non-scaling-stroke;
+}
+
+.map-graph-node.is-current circle {
+    fill: rgba(33, 135, 132, 0.96);
+    stroke: rgba(103, 237, 222, 0.98);
+    stroke-width: 0.12;
+    filter: drop-shadow(0 0 0.18px rgba(72, 220, 207, 0.85));
+}
+
+.map-graph-node.is-selected circle {
+    stroke: #f0d095;
+    stroke-width: 0.15;
+}
+
+.map-graph-node text,
+.map-graph-ghost-node text {
+    fill: #e0c58d;
+    font-family: var(--font-title);
+    font-size: 0.27px;
+    pointer-events: none;
+    text-anchor: middle;
+}
+
+.map-graph-node.is-current text {
+    fill: #a9eee0;
+    font-size: 0.3px;
+}
+
+.map-graph-ghost-node {
+    opacity: 0.72;
+}
+
+.map-graph-ghost-node circle {
+    fill: rgba(45, 42, 34, 0.72);
+    stroke: rgba(194, 156, 92, 0.84);
+    stroke-dasharray: 0.1 0.08;
+    stroke-width: 0.07;
+    vector-effect: non-scaling-stroke;
+}
+
+.map-graph-ghost-node.is-conditional circle {
+    stroke: rgba(222, 179, 90, 0.98);
+}
+
+.map-graph-ghost-node text {
+    fill: #bd9b63;
+    font-size: 0.24px;
+}
+
+.map-current-marker-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 17px;
+    color: #82796a;
+    font-family: var(--font-ui);
+    font-size: 10px;
+}
+
+.map-current-marker-icon {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+}
+
+.map-node-details {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 9px 11px;
+    border: 1px solid rgba(78, 169, 166, 0.28);
+    border-radius: 6px;
+    color: #a8997e;
+    background: rgba(16, 45, 43, 0.48);
+    font-family: var(--font-ui);
+    font-size: 10px;
+}
+
+.map-node-details div {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.map-node-details span {
+    color: #7e9c8e;
+}
+
+.map-node-details strong {
+    color: #d4bd8e;
+    font-weight: 500;
+}
+
+.map-node-details button {
+    margin-left: auto;
+    padding: 3px 7px;
+    border: 1px solid rgba(143, 111, 62, 0.36);
+    border-radius: 4px;
+    color: #aa916b;
+    background: transparent;
+    font-family: var(--font-ui);
+    font-size: 10px;
+}
+
+.map-graph-shell .map-current-exit-dock {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    z-index: 3;
+    flex: 0 0 auto;
+    padding-top: 9px;
+}
+
+.map-graph-shell .map-exit-dock-list {
+    scrollbar-color: rgba(119, 141, 118, 0.5) transparent;
+}
+
+.map-graph-shell .map-exit-button {
+    min-width: 126px;
+}
+
+.map-graph-shell .map-exit-button.is-conditional {
+    border-color: rgba(193, 151, 71, 0.58);
+}
+
+@media (max-width: 680px) {
+    .map-surface {
+        padding-bottom: 88px;
+    }
+
+    .map-board-graph {
+        min-height: 625px;
+        padding: 10px;
+    }
+
+    .map-graph-shell {
+        gap: 7px;
+    }
+
+    .map-graph-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 7px;
+    }
+
+    .map-graph-summary {
+        gap: 6px 10px;
+    }
+
+    .map-graph-summary small {
+        flex-basis: 100%;
+    }
+
+    .map-graph-controls {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+
+    .map-graph-controls button {
+        min-height: 32px;
+        padding: 0 8px;
+    }
+
+    .map-graph-viewport {
+        min-height: 315px;
+    }
+
+    .map-current-marker-note {
+        font-size: 9px;
+    }
+
+    .map-node-details {
+        gap: 6px 12px;
+    }
+
+    .map-node-details button {
+        margin-left: 0;
+    }
+
+    .map-graph-shell .map-exit-button {
+        min-width: 116px;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    .game-header {
+        flex-basis: 58px;
+        padding: 0 22px;
+    }
+
+    .brand-mark {
+        font-size: 31px;
+    }
+
+    .brand-seal {
+        width: 20px;
+        height: 28px;
+        font-size: 9px;
+    }
+
+    .dock-nav {
+        flex-basis: 62px;
+        padding: 0 10px 6px;
+    }
+
+    .dock-item {
+        min-height: 46px;
+        margin: 4px 0 0;
+        gap: 5px;
+        font-size: 14px;
+    }
+
+    .dock-icon .icon {
+        width: 20px;
+        height: 20px;
+    }
+
+    .nav-badge {
+        top: -1px;
+        width: 17px;
+        height: 17px;
+    }
+
+    .page-main {
+        padding: 7px 9px 8px;
+    }
+
+    .page-surface {
+        padding: 9px 14px 12px;
+    }
+
+    .page-heading {
+        gap: 9px;
+        margin-bottom: 7px;
+        padding-bottom: 7px;
+    }
+
+    .page-heading-icon {
+        width: 36px;
+        height: 36px;
+    }
+
+    .page-heading h1 {
+        margin-bottom: 0;
+        font-size: 23px;
+    }
+
+    .page-heading-description {
+        display: none;
+    }
+
+    .page-heading-action {
+        padding-top: 1px;
+    }
+
+    .map-board-graph {
+        min-height: 238px;
+        padding: 8px;
+    }
+
+    .map-graph-shell {
+        gap: 5px;
+    }
+
+    .map-graph-toolbar {
+        min-height: 27px;
+    }
+
+    .map-graph-summary {
+        gap: 5px 9px;
+        font-size: 9px;
+    }
+
+    .map-graph-summary small {
+        font-size: 9px;
+    }
+
+    .map-graph-controls button {
+        min-height: 26px;
+        padding: 0 7px;
+        font-size: 9px;
+    }
+
+    .map-graph-controls span {
+        min-width: 32px;
+        font-size: 9px;
+    }
+
+    .map-graph-viewport {
+        min-height: 117px;
+    }
+
+    .map-current-marker-note {
+        font-size: 8px;
+    }
+
+    .map-graph-shell .map-current-exit-dock {
+        padding-top: 2px;
+    }
+
+    .map-exit-dock-heading {
+        margin-bottom: 4px;
+        font-size: 9px;
+    }
+
+    .map-exit-dock-heading small {
+        font-size: 8px;
+    }
+
+    .map-graph-shell .map-exit-button {
+        min-width: 100px;
+        min-height: 45px;
+        padding: 4px 6px;
+    }
+
+    .map-graph-shell .map-exit-button .map-exit-label {
+        font-size: 11px;
+    }
+
+    .map-graph-shell .map-exit-button .map-exit-copy,
+    .map-graph-shell .map-exit-button .map-exit-status {
+        font-size: 8px;
+    }
+
+    .map-footer-note {
+        display: none;
+    }
+}

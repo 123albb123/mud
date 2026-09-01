@@ -19,6 +19,7 @@ import {
     toInventorySnapshot,
     toRoomInfo,
     toRoomMapSnapshot,
+    toRoomMapTransition,
     toWebRoomMoveRequest,
     toSkillsSnapshot,
     toQuestListSnapshot,
@@ -45,6 +46,13 @@ import {
 } from '../protocol/gmcp/gmcp';
 import { TelnetParser } from '../protocol/telnet/TelnetParser';
 import { MudConnection, type ConnectionState } from '../protocol/websocket/MudConnection';
+import {
+    applyRoomInfo,
+    applyRoomMapSnapshot,
+    applyRoomMapTransition,
+    createEmptyExploredMapGraph,
+    type ExploredMapGraph,
+} from '../features/map/exploredMap';
 
 export interface ProtocolDebugEntry {
     id: number;
@@ -69,6 +77,7 @@ export const useMudClient = () => {
     const [combatActions, setCombatActions] = useState<CombatAction[]>([]);
     const [room, setRoom] = useState<RoomInfo | null>(null);
     const [roomMap, setRoomMap] = useState<RoomMapSnapshot | null>(null);
+    const [exploredMap, setExploredMap] = useState<ExploredMapGraph>(createEmptyExploredMapGraph);
     const [entities, setEntities] = useState<RoomEntity[]>([]);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [equipment, setEquipment] = useState<EquipmentSlot[]>([]);
@@ -175,6 +184,7 @@ export const useMudClient = () => {
             const nextRoom = toRoomInfo(message.payload);
             if (nextRoom) {
                 setRoom(nextRoom);
+                setExploredMap((current) => applyRoomInfo(current, nextRoom));
             }
         } else if (message.packageName === 'Room.Map') {
             const nextRoomMap = toRoomMapSnapshot(message.payload);
@@ -187,6 +197,12 @@ export const useMudClient = () => {
                 roomMapRevisionRef.current = nextRoomMap.revision;
                 roomMapSequenceRef.current = nextRoomMap.sequence;
                 setRoomMap(nextRoomMap);
+                setExploredMap((current) => applyRoomMapSnapshot(current, nextRoomMap));
+            }
+        } else if (message.packageName === 'Room.Map.Transition') {
+            const nextTransition = toRoomMapTransition(message.payload);
+            if (nextTransition) {
+                setExploredMap((current) => applyRoomMapTransition(current, nextTransition));
             }
         } else if (message.packageName === 'Room.Entities') {
             const nextEntities = toRoomEntitiesSnapshot(message.payload);
@@ -283,6 +299,7 @@ export const useMudClient = () => {
                     setCombatActions([]);
                     setRoom(null);
                     setRoomMap(null);
+                    setExploredMap(createEmptyExploredMapGraph());
                     setEntities([]);
                     setInventory([]);
                     setEquipment([]);
@@ -300,6 +317,7 @@ export const useMudClient = () => {
                     setCombatActions([]);
                     setRoom(null);
                     setRoomMap(null);
+                    setExploredMap(createEmptyExploredMapGraph());
                     setEntities([]);
                     setInventory([]);
                     setEquipment([]);
@@ -350,6 +368,7 @@ export const useMudClient = () => {
         setCombatActions([]);
         setRoom(null);
         setRoomMap(null);
+        setExploredMap(createEmptyExploredMapGraph());
         setEntities([]);
         setInventory([]);
         setEquipment([]);
@@ -469,6 +488,7 @@ export const useMudClient = () => {
         combatActions,
         room,
         roomMap,
+        exploredMap,
         entities,
         inventory,
         equipment,

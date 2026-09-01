@@ -13,6 +13,7 @@
 #define GMCP_CHAT_TEXT_LIMIT 2048
 #define GMCP_CHAT_TARGETS_VERSION 1
 #define GMCP_MAP_VERSION 1
+#define GMCP_MAP_TRANSITION_VERSION 1
 #define GMCP_MAP_EXIT_LIMIT 64
 #define GMCP_MAP_TEXT_LIMIT 160
 #define GMCP_MAP_COMMAND_LIMIT 96
@@ -28,6 +29,7 @@ private nosave int gmcp_map_exit_sequence;
 private nosave int gmcp_map_revision;
 private nosave string gmcp_map_fingerprint;
 private nosave int gmcp_map_polling;
+private nosave int gmcp_map_transition_sequence;
 private nosave mapping gmcp_item_ids = ([]);
 private nosave string gmcp_item_session;
 private nosave int gmcp_item_sequence;
@@ -165,6 +167,33 @@ private string query_gmcp_room_id(object room)
     }
 
     return query_gmcp_room_id_at(room, 0, 0, 0);
+}
+
+string gmcp_map_current_room_id()
+{
+    object room;
+
+    room = environment(this_object());
+    if (!objectp(room))
+        return "";
+    return query_gmcp_room_id(room);
+}
+
+private int gmcp_map_known_room_id(string room_id)
+{
+    string *room_keys;
+    int i;
+
+    if (!stringp(room_id) || room_id == "" || !mapp(gmcp_room_ids))
+        return 0;
+
+    room_keys = keys(gmcp_room_ids);
+    for (i = 0; i < sizeof(room_keys); i++)
+    {
+        if (gmcp_room_ids[room_keys[i]] == room_id)
+            return 1;
+    }
+    return 0;
 }
 
 private string query_gmcp_item_id(object item)
@@ -1499,6 +1528,81 @@ private void gmcp_map_action_failed(string message)
 {
     write(message + "\n");
     gmcp_refresh_room_map(0);
+}
+
+private int gmcp_map_transition_matches_exit(object old_room,
+                                              string command,
+                                              object current_room)
+{
+    mapping exits;
+    mixed destination;
+    object target;
+    string path;
+
+    if (!objectp(old_room) || !objectp(current_room))
+        return 0;
+    if (gmcp_room_is_area(old_room))
+        return 1;
+
+    exits = gmcp_map_query(old_room, "exits");
+    if (!mapp(exits) || undefinedp(exits[command]))
+        return 0;
+
+    destination = exits[command];
+    if (objectp(destination))
+        return destination == current_room;
+
+    if (stringp(destination))
+        path = destination;
+    else if (mapp(destination))
+        path = destination["filename"];
+    else
+        return 0;
+
+    if (!stringp(path) || path == "")
+        return 0;
+    target = 0;
+    if (catch(target = find_object(path)) || !objectp(target))
+        return 0;
+    return target == current_room;
+}
+
+void gmcp_map_transition(string from_room_id, string command,
+                         object old_room)
+{
+    mapping transition;
+    object room;
+    string to_room_id;
+
+    if (!interactive(this_object()) || !has_gmcp() ||
+        !gmcp_supports("Room.Map.Transition") ||
+        !gmcp_map_command_allowed(command) ||
+        !gmcp_map_known_room_id(from_room_id) ||
+        !gmcp_map_transition_matches_exit(old_room, command,
+                                          environment(this_object())))
+        return;
+
+    room = environment(this_object());
+    if (!objectp(room))
+        return;
+
+    to_room_id = query_gmcp_room_id(room);
+    if (to_room_id == "" || to_room_id == from_room_id)
+        return;
+
+    gmcp_map_transition_sequence++;
+    transition = ([
+        "version"       : GMCP_MAP_TRANSITION_VERSION,
+        "sequence"      : gmcp_map_transition_sequence,
+        "from_room_id"  : from_room_id,
+        "to_room_id"    : to_room_id,
+        "command"       : gmcp_map_text(command, GMCP_MAP_COMMAND_LIMIT),
+        "label"         : gmcp_map_exit_label(command),
+        "kind"          : "move",
+    ]);
+    if (gmcp_room_is_area(room))
+        transition["area"] = 1;
+    sendGMCP(transition, "Room", "Map", "Transition");
 }
 
 int gmcp_run_go_with_context(string direction)
@@ -3760,6 +3864,7 @@ private void gmcp_reset_session_state()
     gmcp_map_revision = 0;
     gmcp_map_fingerprint = 0;
     gmcp_map_polling = 0;
+    gmcp_map_transition_sequence = 0;
     gmcp_item_ids = ([]);
     gmcp_item_session = 0;
     gmcp_item_sequence = 0;
@@ -3828,6 +3933,7 @@ private void gmcp_enable()
             "Char.Status"    : GMCP_STATE_VERSION,
             "Room.Info"      : 1,
             "Room.Map"       : GMCP_MAP_VERSION,
+            "Room.Map.Transition": GMCP_MAP_TRANSITION_VERSION,
             "Room.Entities"  : GMCP_ENTITIES_VERSION,
             "Char.Inventory" : GMCP_ITEMS_VERSION,
             "Char.Equipment": GMCP_ITEMS_VERSION,

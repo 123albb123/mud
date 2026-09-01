@@ -39,6 +39,8 @@ void create() { seteuid(getuid()); }
 int main(object me, string arg)
 {
     object env;
+    string old_room_id;
+    int result;
 
     if (!arg)
         return notify_fail("你要往哪个方向走？\n");
@@ -60,10 +62,21 @@ int main(object me, string arg)
     env = environment(me);
     if (!env)
         return notify_fail("你哪里也去不了。\n");
+
+    old_room_id = "";
+    if (function_exists("gmcp_map_current_room_id", me))
+        catch(old_room_id = (string)me->gmcp_map_current_room_id());
+
     if (env->is_area())
-        return do_area_move(me, env, arg);
+        result = do_area_move(me, env, arg);
     else
-        return do_room_move(me, env, arg);
+        result = do_room_move(me, env, arg);
+
+    if (result && objectp(me) && old_room_id != "" &&
+        function_exists("gmcp_map_transition", me))
+        catch(me->gmcp_map_transition(old_room_id, arg, env));
+
+    return result;
 }
 
 int do_room_move(object me, object env, string arg)

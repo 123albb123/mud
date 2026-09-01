@@ -156,6 +156,17 @@ export interface RoomMapSnapshot {
     exits: RoomMapExit[];
 }
 
+export interface RoomMapTransition {
+    version: 1;
+    sequence: number;
+    from_room_id: string;
+    to_room_id: string;
+    command: string;
+    label: string;
+    kind: 'move';
+    area?: boolean;
+}
+
 export interface GMCPAction {
     id: string;
     label?: string;
@@ -334,6 +345,7 @@ export const GMCP_SUPPORTS = [
     'Char.Status 1',
     'Room.Info 1',
     'Room.Map 1',
+    'Room.Map.Transition 1',
     'Room.Entities 1',
     'Char.Inventory 1',
     'Char.Equipment 1',
@@ -766,6 +778,49 @@ export const toRoomMapSnapshot = (payload: unknown): RoomMapSnapshot | null => {
         room,
         exits,
     };
+};
+
+export const toRoomMapTransition = (payload: unknown): RoomMapTransition | null => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return null;
+    }
+    const data = payload as Record<string, unknown>;
+    const sequence = finiteNumber(data.sequence);
+    const fromRoomId = typeof data.from_room_id === 'string' &&
+        roomMapRoomIdPattern.test(data.from_room_id)
+        ? data.from_room_id
+        : null;
+    const toRoomId = typeof data.to_room_id === 'string' &&
+        roomMapRoomIdPattern.test(data.to_room_id)
+        ? data.to_room_id
+        : null;
+    const command = safeDisplayText(data.command, 96);
+    const label = safeDisplayText(data.label, 160);
+    if (data.version !== 1 || sequence === undefined || !Number.isInteger(sequence) ||
+        sequence <= 0 || sequence > 1_000_000_000 || !fromRoomId || !toRoomId ||
+        fromRoomId === toRoomId || !command || !label ||
+        command.includes('/') || command.includes('\\') ||
+        label.includes('/') || label.includes('\\') || data.kind !== 'move') {
+        return null;
+    }
+
+    const transition: RoomMapTransition = {
+        version: 1,
+        sequence,
+        from_room_id: fromRoomId,
+        to_room_id: toRoomId,
+        command,
+        label,
+        kind: 'move',
+    };
+    if (data.area !== undefined) {
+        const area = booleanFlag(data.area);
+        if (area === undefined) {
+            return null;
+        }
+        transition.area = area;
+    }
+    return transition;
 };
 
 const nonNegativeInteger = (value: unknown, max = 1_000_000_000): number | undefined => {
