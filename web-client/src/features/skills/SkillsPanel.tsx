@@ -17,6 +17,31 @@ interface SkillListProps {
     skills: CharacterSkill[];
 }
 
+const skillDisplayLabels: Record<string, string> = {
+    force: '内功',
+    dodge: '轻功',
+    parry: '招架',
+    sword: '剑法',
+    blade: '刀法',
+    unarmed: '拳脚',
+    staff: '棍法',
+    stick: '棍法',
+    whip: '鞭法',
+    throwing: '暗器',
+    dagger: '短兵',
+    claw: '爪法',
+    leg: '腿法',
+    spear: '枪法',
+    hammer: '锤法',
+    axe: '斧法',
+    hook: '钩法',
+    shield: '盾法',
+    weapon: '兵器',
+    martial: '武学',
+};
+
+const skillDisplayLabel = (value: string): string => skillDisplayLabels[value] ?? value;
+
 const SkillList = ({ disabled, onAction, selections, setSelection, skills }: SkillListProps) => (
     <div className="skills-list">
         {skills.length === 0 ? <p className="empty-entity-state">暂无此类技能。</p> : skills.map((skill) => {
@@ -25,14 +50,14 @@ const SkillList = ({ disabled, onAction, selections, setSelection, skills }: Ski
                 <article className="skill-card" key={skill.skill_id}>
                     <div>
                         <strong>{skill.name}</strong>
-                        <span>{skill.skill_id} · {skill.type}</span>
+                        <span>{skillDisplayLabel(skill.type)} · {skill.level}级</span>
                     </div>
-                    <p>等级 {skill.level} · 熟练 {skill.progress}%</p>
+                    <p>熟练度 {skill.progress}%</p>
                     {(skill.enabled_for.length > 0 || skill.prepared_for.length > 0) && (
                         <small>
-                            {skill.enabled_for.length > 0 && `已启用：${skill.enabled_for.join('、')}`}
+                            {skill.enabled_for.length > 0 && `已启用：${skill.enabled_for.map(skillDisplayLabel).join('、')}`}
                             {skill.enabled_for.length > 0 && skill.prepared_for.length > 0 && ' · '}
-                            {skill.prepared_for.length > 0 && `已准备：${skill.prepared_for.join('、')}`}
+                            {skill.prepared_for.length > 0 && `已准备：${skill.prepared_for.map(skillDisplayLabel).join('、')}`}
                         </small>
                     )}
                     {skill.enable_slots.length > 0 && (
@@ -42,7 +67,7 @@ const SkillList = ({ disabled, onAction, selections, setSelection, skills }: Ski
                                 onChange={(event) => setSelection(skill.skill_id, event.target.value)}
                                 value={selectedSlot}
                             >
-                                {skill.enable_slots.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
+                                {skill.enable_slots.map((slot) => <option key={slot} value={slot}>{skillDisplayLabel(slot)}</option>)}
                             </select>
                             <button
                                 disabled={disabled || !selectedSlot}
@@ -100,8 +125,8 @@ export const SkillsPanel = ({ connected = true, disabled, onAction, skills, stat
     return (
         <section className="skills-panel" aria-labelledby="skills-title">
             <div className="skills-summary">
-                <p id="skills-title">当前启用：{status?.enabled.map((item) => `${item.slot}·${item.name}`).join('、') || '无'}</p>
-                <p>当前准备：{status?.prepared.map((item) => `${item.slot}·${item.name}`).join('、') || '无'}</p>
+                <p id="skills-title">当前启用：{status?.enabled.map((item) => `${skillDisplayLabel(item.slot)}·${item.name}`).join('、') || '无'}</p>
+                <p>当前准备：{status?.prepared.map((item) => `${skillDisplayLabel(item.slot)}·${item.name}`).join('、') || '无'}</p>
             </div>
             <h3>基础技能</h3>
             <SkillList disabled={disabled} onAction={onAction} selections={selections} setSelection={setSelection} skills={basicSkills} />

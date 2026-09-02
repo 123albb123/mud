@@ -131,6 +131,21 @@ describe('RoomEntities', () => {
         expect(onGive).toHaveBeenCalledWith('i-test-0001', 'e-test-0001');
     });
 
+    it('clears person details and temporary form state when switching groups', () => {
+        render(<RoomEntities disabled={false} entities={entities} inventory={inventory} onAction={() => undefined} onGive={() => undefined} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /北丑/ }));
+        fireEvent.click(screen.getByRole('button', { name: '询问' }));
+        fireEvent.change(screen.getByLabelText('询问内容'), { target: { value: '不要残留' } });
+        fireEvent.change(screen.getByLabelText('给予物品'), { target: { value: 'i-test-0001' } });
+
+        fireEvent.click(screen.getByRole('tab', { name: /地面物品/ }));
+        expect(screen.queryByLabelText('北丑 可用动作')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('询问内容')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('给予物品')).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /长剑/ })).toHaveLength(2);
+    });
+
     it('shows an explicit empty state for a group with no entities', () => {
         render(<RoomEntities disabled={true} entities={[]} inventory={[]} onAction={() => undefined} onGive={() => undefined} />);
         expect(screen.getByText('附近没有可交互的人物。')).toBeInTheDocument();

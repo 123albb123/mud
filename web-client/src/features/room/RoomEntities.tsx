@@ -98,6 +98,7 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
         )?.id;
         setMessageAction(firstMessageAction === 'ask' || firstMessageAction === 'talk' ? firstMessageAction : null);
         setMessage('');
+        setGiveItemId('');
     }, [selectedEntity]);
 
     useEffect(() => {
@@ -110,7 +111,7 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
 
     const submitMessage = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        if (!selectedEntity || !message.trim()) {
+        if (disabled || !selectedEntity || !message.trim()) {
             return;
         }
         if (messageAction) {
@@ -120,10 +121,18 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
     };
 
     const submitGive = () => {
-        if (selectedEntity && giveItemId) {
+        if (!disabled && selectedEntity && giveItemId) {
             onGive(giveItemId, selectedEntity.entity_id);
             setGiveItemId('');
         }
+    };
+
+    const selectGroup = (group: 'nearby' | 'ground') => {
+        setActiveGroup(group);
+        setSelectedEntityId(null);
+        setMessage('');
+        setMessageAction(null);
+        setGiveItemId('');
     };
 
     return (
@@ -139,7 +148,7 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
                 <button
                     aria-selected={activeGroup === 'nearby'}
                     className={activeGroup === 'nearby' ? 'active' : ''}
-                    onClick={() => setActiveGroup('nearby')}
+                    onClick={() => selectGroup('nearby')}
                     role="tab"
                     type="button"
                 >
@@ -148,7 +157,7 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
                 <button
                     aria-selected={activeGroup === 'ground'}
                     className={activeGroup === 'ground' ? 'active' : ''}
-                    onClick={() => setActiveGroup('ground')}
+                    onClick={() => selectGroup('ground')}
                     role="tab"
                     type="button"
                 >

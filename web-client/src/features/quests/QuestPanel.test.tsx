@@ -24,6 +24,8 @@ describe('QuestPanel', () => {
     it('renders current tasks and expands structured objectives', () => {
         render(<QuestPanel snapshot={snapshot} />);
         expect(screen.getByText('幻境心魔')).toBeInTheDocument();
+        expect(screen.getByText('江湖')).toBeInTheDocument();
+        expect(screen.queryByText('quest2')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /幻境心魔/ }));
         expect(screen.getByText('3/20')).toBeInTheDocument();
     });

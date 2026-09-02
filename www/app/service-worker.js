@@ -1,7 +1,7 @@
-const CACHE_NAME = "yanhuang-web-v0.1.0-c5d71cba";
+const CACHE_NAME = "yanhuang-web-v0.1.0-4d527342";
 const CACHE_NAME_PREFIX = 'yanhuang-web-';
 const APP_SCOPE = '/app/';
-const PRECACHE_URLS = ["/app/index.html","/app/manifest.json","/app/icons/icon-192.png","/app/icons/icon-512.png","/app/icons/icon-maskable-512.png","/app/icons/apple-touch-icon.png","/app/assets/index-BSSX7Yz4.js","/app/assets/index-BZ3NEfYK.css"];
+const PRECACHE_URLS = ["/app/index.html","/app/manifest.json","/app/icons/icon-192.png","/app/icons/icon-512.png","/app/icons/icon-maskable-512.png","/app/icons/apple-touch-icon.png","/app/assets/index-DHnixhAX.js","/app/assets/index-B37rovIS.css"];
 const STATIC_DESTINATIONS = new Set(['script', 'style', 'image', 'font', 'manifest']);
 
 self.addEventListener('install', (event) => {

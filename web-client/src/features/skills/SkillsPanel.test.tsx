@@ -31,6 +31,10 @@ describe('SkillsPanel', () => {
         );
         expect(screen.getByText('基础技能')).toBeInTheDocument();
         expect(screen.getByText('特殊武功')).toBeInTheDocument();
+        expect(screen.getByText('武学 · 100级')).toBeInTheDocument();
+        expect(screen.getByText('武学 · 90级')).toBeInTheDocument();
+        expect(screen.queryByText('taiji-sword')).not.toBeInTheDocument();
+        expect(screen.queryByText('martial')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: '启用' }));
         expect(onAction).toHaveBeenCalledWith('taiji-sword', 'enable', 'sword');
         fireEvent.click(screen.getByRole('button', { name: '准备' }));
@@ -53,7 +57,7 @@ describe('SkillsPanel', () => {
                     },
                     {
                         skill_id: 'taiji-quan', name: '太极拳', level: 90, progress: 80, type: 'martial',
-                        is_basic: false, enabled_for: [], prepared_for: [], prepare_slots: ['unarmed'], enable_slots: [],
+                         is_basic: false, enabled_for: [], prepared_for: [], prepare_slots: ['unarmed'], enable_slots: ['unarmed'],
                     },
                     {
                         skill_id: 'taiji-sword', name: '太极剑法', level: 90, progress: 80, type: 'martial',
@@ -66,5 +70,8 @@ describe('SkillsPanel', () => {
         expect(screen.getAllByRole('button', { name: '准备' })).toHaveLength(1);
         expect(screen.getByText('太极拳')).toBeInTheDocument();
         expect(screen.getByText('太极剑法')).toBeInTheDocument();
+        expect(screen.getAllByText(/内功 · 100级/)).toHaveLength(1);
+        expect(screen.getByRole('option', { name: '拳脚' })).toBeInTheDocument();
+        expect(screen.queryByText('force')).not.toBeInTheDocument();
     });
 });

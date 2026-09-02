@@ -22,6 +22,26 @@ const systemLabels: Record<QuestRecord['system'], string> = {
     daily: '每日',
 };
 
+const categoryLabels: Record<string, string | null> = {
+    traditional: '师门',
+    quest2: '江湖',
+    ultra: '大宗师',
+    mirror: '宝镜',
+    daily: '每日',
+    session: null,
+    main: '主线',
+    side: '支线',
+};
+
+const questCategoryLabel = (record: QuestRecord): string | null => {
+    const category = record.category.trim();
+    if (!category) {
+        return null;
+    }
+    const label = categoryLabels[category] ?? category;
+    return label === systemLabels[record.system] || category === record.system ? null : label;
+};
+
 const deadlineLabel = (deadline: number | undefined): string | null => {
     if (deadline === undefined || !Number.isFinite(deadline)) {
         return null;
@@ -32,6 +52,7 @@ const deadlineLabel = (deadline: number | undefined): string | null => {
 const QuestCard = ({ record }: { record: QuestRecord }) => {
     const [expanded, setExpanded] = useState(false);
     const deadline = deadlineLabel(record.deadline);
+    const category = questCategoryLabel(record);
 
     return (
         <article className={`quest-card quest-${record.status}`}>
@@ -43,7 +64,7 @@ const QuestCard = ({ record }: { record: QuestRecord }) => {
             >
                 <span className="quest-card-title">
                     <strong>{record.title}</strong>
-                    <small>{systemLabels[record.system]} · {record.category}</small>
+                    <small>{systemLabels[record.system]}{category ? ` · ${category}` : ''}</small>
                 </span>
                 <span className="quest-card-status">{statusLabels[record.status]}</span>
             </button>

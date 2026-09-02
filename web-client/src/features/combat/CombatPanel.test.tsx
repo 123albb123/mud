@@ -33,14 +33,17 @@ describe('CombatPanel', () => {
                 disabled={false}
                 entities={[
                     { entity_id: 'e-test-0001', type: 'npc', name: '欧阳克', actions: [] },
-                    { entity_id: 'e-test-0002', type: 'npc', name: '欧阳克', actions: [] },
+                    { entity_id: 'e-test-0002', type: 'player', name: '欧阳克', actions: [] },
                 ]}
                 onAction={onAction}
                 status={status}
             />,
         );
 
-        expect(screen.getAllByText('欧阳克')).toHaveLength(3);
+        expect(screen.getAllByText(/欧阳克/)).toHaveLength(3);
+        expect(screen.getByRole('option', { name: '欧阳克 · NPC' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '欧阳克 · 玩家' })).toBeInTheDocument();
+        expect(screen.getByText('玩家')).toBeInTheDocument();
         expect(screen.getByText(/生死相搏/)).toBeInTheDocument();
         expect(screen.getByRole('combobox', { name: '目标' })).toHaveValue('e-test-0002');
         fireEvent.click(screen.getByRole('button', { name: '切磋' }));
@@ -88,5 +91,44 @@ describe('CombatPanel', () => {
         );
         expect(screen.getByRole('button', { name: /恢复/ })).toBeDisabled();
         expect(screen.getByText('忙乱')).toBeInTheDocument();
+    });
+
+    it('requires a target when every target action requires one', () => {
+        render(
+            <CombatPanel
+                actions={[{
+                    action_id: 'fight', label: '切磋', kind: 'fight', requires_target: true,
+                    target_mode: 'required', target_types: ['npc'],
+                }]}
+                combat={null}
+                disabled={false}
+                entities={[{ entity_id: 'e-test-0001', type: 'npc', name: '敌人', actions: [] }]}
+                onAction={() => undefined}
+                status={status}
+            />,
+        );
+
+        expect(screen.getByRole('option', { name: '请选择目标' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '切磋' })).not.toBeDisabled();
+    });
+
+    it('disables target selection and actions while disconnected', () => {
+        render(
+            <CombatPanel
+                actions={[{
+                    action_id: 'fight', label: '切磋', kind: 'fight', requires_target: true,
+                    target_mode: 'required', target_types: ['npc'],
+                }]}
+                combat={null}
+                connected={false}
+                disabled
+                entities={[{ entity_id: 'e-test-0001', type: 'npc', name: '敌人', actions: [] }]}
+                onAction={() => undefined}
+                status={status}
+            />,
+        );
+
+        expect(screen.getByRole('combobox', { name: '目标' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '切磋' })).toBeDisabled();
     });
 });

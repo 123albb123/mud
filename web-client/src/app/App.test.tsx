@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CharacterStatus, CharacterVitals, ChatMessage, QuestListSnapshot, RoomInfo, RoomMapSnapshot } from '../protocol/gmcp/gmcp';
+import type { CharacterStatus, CharacterVitals, ChatMessage, CombatStateSnapshot, QuestListSnapshot, RoomInfo, RoomMapSnapshot } from '../protocol/gmcp/gmcp';
 import { createEmptyExploredMapGraph } from '../features/map/exploredMap';
 import { useMudClient } from '../stores/useMudClient';
 import { App } from './App';
@@ -79,6 +79,23 @@ const vitalsFixture: CharacterVitals = {
     max_neili: 80,
 };
 
+const combatFixture: CombatStateSnapshot = {
+    version: 1,
+    snapshot: true,
+    revision: 1,
+    sequence: 1,
+    in_combat: true,
+    busy: false,
+    can_act: true,
+    targets: [{
+        entity_id: 'npc-session-1',
+        name: '测试木人',
+        relation: 'fight',
+        health: 'healthy',
+    }],
+    primary_target: 'npc-session-1',
+};
+
 const roomFixture: RoomInfo = {
     name: '真实房间',
     area: '真实区域',
@@ -143,7 +160,7 @@ describe('App', () => {
         });
     });
 
-    it('keeps disconnected views empty and preserves the five-item mobile navigation', () => {
+    it('keeps disconnected views empty and preserves the six-item mobile navigation', () => {
         const sendCommand = vi.fn();
         vi.mocked(useMudClient).mockReturnValue(makeClient({ sendCommand }));
         render(<App />);
@@ -159,8 +176,11 @@ describe('App', () => {
         expect(document.querySelector('.dock-quests .nav-badge')).toBeNull();
         expect(document.querySelector('.dock-chat .nav-badge')).toBeNull();
         expect(document.querySelector('.desktop-equipment')).toBeInTheDocument();
+        expect([...document.querySelectorAll('.dock-nav .dock-item:not(.desktop-equipment)')].map((button) => button.textContent?.trim())).toEqual([
+            '江湖', '行囊', '武学', '地图', '任务', '消息',
+        ]);
 
-        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        fireEvent.click(within(screen.getByRole('navigation', { name: '全局导航' })).getByRole('button', { name: '地图' }));
         expect(screen.getByText('连接服务器后显示当前房间地图。')).toBeInTheDocument();
         expect(screen.queryByText('真实地图数据尚未接入')).not.toBeInTheDocument();
         expect(sendCommand).not.toHaveBeenCalled();
@@ -182,6 +202,16 @@ describe('App', () => {
         expect(screen.getByText('连接江湖后查看任务')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /^消息$/ }));
         expect(screen.getByText('连接江湖后查看消息')).toBeInTheDocument();
+    });
+
+    it('opens the existing help view from settings', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient());
+        render(<App />);
+
+        fireEvent.click(screen.getByRole('button', { name: '打开应用设置' }));
+        expect(screen.getByRole('heading', { name: '帮助', level: 2 })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: '查看帮助' }));
+        expect(screen.getByRole('heading', { name: '帮助', level: 1 })).toBeInTheDocument();
     });
 
     it('renders protocol fields without inventing level, alignment, room details, or latency', () => {
@@ -209,6 +239,21 @@ describe('App', () => {
         expect(document.querySelector('.dock-chat .nav-badge')).toHaveTextContent('1');
     });
 
+    it('keeps compact status and combat reachable at narrow layouts with live protocol data', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient({
+            connectionState: 'connected',
+            vitals: vitalsFixture,
+            status: { ...statusFixture, fighting: true },
+            combat: combatFixture,
+        }));
+        render(<App />);
+
+        const compactStatus = screen.getByLabelText('紧凑人物状态');
+        expect(within(compactStatus).getByText('100 / 120')).toBeInTheDocument();
+        expect(within(compactStatus).getByText('战斗中')).toBeInTheDocument();
+        expect(document.querySelector('.mobile-combat .combat-panel')).toBeInTheDocument();
+    });
+
     it('uses the opaque map exit token for map movement', () => {
         const sendRoomMove = vi.fn();
         const sendCommand = vi.fn();
@@ -221,7 +266,7 @@ describe('App', () => {
         }));
         render(<App />);
 
-        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        fireEvent.click(within(screen.getByRole('navigation', { name: '全局导航' })).getByRole('button', { name: '地图' }));
         fireEvent.click(screen.getByRole('button', { name: /东真实东侧/ }));
         expect(sendRoomMove).toHaveBeenCalledWith('x-session-1');
         expect(sendCommand).not.toHaveBeenCalled();
@@ -264,7 +309,7 @@ describe('App', () => {
         expect(screen.queryByText('RIVERS · CHAT')).not.toBeInTheDocument();
         expect(screen.queryByText('CHAT · MESSAGE')).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        fireEvent.click(within(screen.getByRole('navigation', { name: '全局导航' })).getByRole('button', { name: '地图' }));
         expectPageTitle('地图');
         expect(screen.queryByText('WORLD · MAP')).not.toBeInTheDocument();
 
@@ -291,9 +336,54 @@ describe('App', () => {
 
         const input = screen.getByLabelText('MUD 命令');
         fireEvent.change(input, { target: { value: 'examine xxx' } });
-        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        fireEvent.click(within(screen.getByRole('navigation', { name: '全局导航' })).getByRole('button', { name: '地图' }));
         fireEvent.click(document.querySelector('.top-nav button') as HTMLElement);
 
         expect(screen.getByLabelText('MUD 命令')).toHaveValue('examine xxx');
+    });
+
+    it('keeps an invalid settings endpoint from being submitted', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient());
+        render(<App />);
+
+        fireEvent.click(screen.getByRole('button', { name: '打开应用设置' }));
+        const settingsForm = document.querySelector<HTMLElement>('.settings-connection-form');
+        if (!settingsForm) {
+            throw new Error('settings connection form is missing');
+        }
+        fireEvent.change(within(settingsForm).getByLabelText('WebSocket 地址'), { target: { value: 'not-a-websocket-url' } });
+        expect(within(settingsForm).getByRole('button', { name: '连接' })).toBeDisabled();
+    });
+
+    it('counts only new incoming chat messages and clears the count on entry', () => {
+        let clientState = makeClient();
+        vi.mocked(useMudClient).mockImplementation(() => clientState);
+        const { rerender } = render(<App />);
+        const dock = () => screen.getByRole('navigation', { name: '江湖主导航' });
+
+        expect(dock().querySelector('.dock-chat .nav-badge')).toBeNull();
+        clientState = makeClient({ chatMessages: [{ ...messageFixture, message_id: 'm-incoming-1', direction: 'in' }] });
+        rerender(<App />);
+        expect(dock().querySelector('.dock-chat .nav-badge')).toHaveTextContent('1');
+
+        fireEvent.click(within(dock()).getByRole('button', { name: /^消息/ }));
+        expect(dock().querySelector('.dock-chat .nav-badge')).toBeNull();
+
+        clientState = makeClient({ chatMessages: [{ ...messageFixture, message_id: 'm-outgoing-1', direction: 'out' }] });
+        rerender(<App />);
+        expect(dock().querySelector('.dock-chat .nav-badge')).toBeNull();
+    });
+
+    it('caps the session chat unread badge at 99+', () => {
+        const messages = Array.from({ length: 101 }, (_, index) => ({
+            ...messageFixture,
+            message_id: `m-incoming-${index}`,
+            timestamp: index + 1,
+            direction: 'in' as const,
+        }));
+        vi.mocked(useMudClient).mockReturnValue(makeClient({ chatMessages: messages }));
+        render(<App />);
+
+        expect(document.querySelector('.dock-chat .nav-badge')).toHaveTextContent('99+');
     });
 });

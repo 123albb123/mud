@@ -88,6 +88,7 @@ export const InventoryPanel = ({ connected = true, embedded = false, items, onAc
                     <div>
                         {selectedItem.actions.map((action) => (
                             <button
+                                disabled={!connected}
                                 key={`${selectedItem.item_id}:${action.id}`}
                                 onClick={() => onAction(selectedItem.item_id, action.id)}
                                 type="button"

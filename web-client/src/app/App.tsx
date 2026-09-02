@@ -10,7 +10,7 @@ import { RoomPanel } from '../features/room/RoomPanel';
 import { SkillsPanel } from '../features/skills/SkillsPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
 import { Terminal, type TerminalFontSize } from '../features/terminal/Terminal';
-import type { CharacterStatus, CharacterVitals } from '../protocol/gmcp/gmcp';
+import type { CharacterStatus, CharacterVitals, CombatStateSnapshot } from '../protocol/gmcp/gmcp';
 import {
     clientVersion,
     getMudUrlCompatibilityMessage,
@@ -87,6 +87,7 @@ const navItems: Array<{ view: ViewKey; label: string; icon: IconName }> = [
     { view: 'jianghu', label: '江湖', icon: 'mountain' },
     { view: 'inventory', label: '行囊', icon: 'bag' },
     { view: 'skills', label: '武学', icon: 'book' },
+    { view: 'map', label: '地图', icon: 'map' },
     { view: 'quests', label: '任务', icon: 'quest' },
     { view: 'chat', label: '消息', icon: 'message' },
 ];
@@ -111,6 +112,46 @@ const PlayerCard = ({ connected, vitals, status }: { connected: boolean; vitals:
     );
 };
 
+const CompactResource = ({ label, current, maximum, tone }: { label: string; current: number | undefined; maximum: number | undefined; tone: string }) => {
+    const hasValues = current !== undefined && maximum !== undefined;
+    const percent = hasValues && maximum > 0 ? Math.max(0, Math.min(100, (current / maximum) * 100)) : 0;
+    return (
+        <div className="compact-resource">
+            <div><span>{label}</span><strong>{hasValues ? `${current} / ${maximum}` : '--'}</strong></div>
+            <span className={'compact-resource-fill ' + tone} style={{ width: String(percent) + '%' }} />
+        </div>
+    );
+};
+
+const CompactPlayerStatus = ({ connected, combat, vitals, status }: { connected: boolean; combat: CombatStateSnapshot | null; vitals: CharacterVitals | null; status: CharacterStatus | null }) => {
+    const hasVitals = Boolean(vitals);
+    const combatLabel = combat
+        ? combat.in_combat ? '战斗中' : '未交战'
+        : status?.fighting ? '战斗中' : connected ? '等待状态' : '暂无快照';
+    return (
+        <section className="compact-player-status surface-card" aria-label="紧凑人物状态">
+            <div className="compact-player-status-heading">
+                <span className="compact-status-seal"><Icon name="user" size={18} /></span>
+                <strong>人物状态</strong>
+                <span className={'state-chip ' + (connected ? '' : 'muted')}>{connected ? '实时' : '快照'}</span>
+            </div>
+            <div className="compact-resource-list">
+                {hasVitals ? <>
+                    <CompactResource current={vitals?.hp} label="气血" maximum={vitals?.max_hp} tone="red" />
+                    <CompactResource current={vitals?.neili} label="内力" maximum={vitals?.max_neili} tone="violet" />
+                    <CompactResource current={vitals?.jing} label="精神" maximum={vitals?.max_jing} tone="blue" />
+                    <CompactResource current={vitals?.jingli} label="精力" maximum={vitals?.max_jingli} tone="jade" />
+                </> : <span className="compact-status-empty">{connected ? '等待服务器发送人物状态' : '尚未连接江湖'}</span>}
+            </div>
+            <div className="compact-combat-state">
+                <span>战斗状态</span>
+                <strong>{combatLabel}</strong>
+                {(status?.can_act === false || combat?.can_act === false) && <span className="state-chip danger">不可行动</span>}
+            </div>
+        </section>
+    );
+};
+
 const PageHeading = ({ title, description, icon, action }: { title: string; description: string; icon: IconName; action?: ReactNode }) => (
     <div className="page-heading"><div className="page-heading-icon"><Icon name={icon} size={26} /></div><div><h1>{title}</h1><p className="page-heading-description">{description}</p></div>{action && <div className="page-heading-action">{action}</div>}</div>
 );
@@ -119,8 +160,12 @@ const DockNav = ({ activeView, onNavigate, questCount, messageCount }: { activeV
     return (
         <nav className="dock-nav" aria-label="江湖主导航"><div className="dock-nav-inner">
             {navItems.map((item) => {
-                const badge = item.view === 'quests' ? questCount : item.view === 'chat' ? messageCount : 0;
-                return <button aria-current={activeView === item.view ? 'page' : undefined} className={'dock-item ' + (activeView === item.view ? 'active ' : '') + 'dock-' + item.view} key={item.view} onClick={() => onNavigate(item.view)} type="button"><span className="dock-icon"><Icon name={item.icon} size={25} /></span><span>{item.label}</span>{badge > 0 && <span className="nav-badge">{badge}</span>}</button>;
+                const badge = item.view === 'quests'
+                    ? questCount > 0 ? String(questCount) : null
+                    : item.view === 'chat' && messageCount > 0
+                        ? messageCount > 99 ? '99+' : String(messageCount)
+                        : null;
+                return <button aria-current={activeView === item.view ? 'page' : undefined} className={'dock-item ' + (activeView === item.view ? 'active ' : '') + 'dock-' + item.view} key={item.view} onClick={() => onNavigate(item.view)} type="button"><span className="dock-icon"><Icon name={item.icon} size={25} /></span><span>{item.label}</span>{badge && <span className="nav-badge">{badge}</span>}</button>;
             })}
             <button aria-current={activeView === 'equipment' ? 'page' : undefined} className={'dock-item dock-equipment desktop-equipment ' + (activeView === 'equipment' ? 'active' : '')} onClick={() => onNavigate('equipment')} type="button"><span className="dock-icon"><Icon name="armor" size={25} /></span><span>装备</span></button>
         </div></nav>
@@ -146,6 +191,7 @@ type SettingsViewProps = {
     connectionDetail: string;
     debugEntries: Array<{ id: number; time: string; message: string }>;
     onConnect: () => void;
+    onNavigate: (view: ViewKey) => void;
     onToggleDebug: () => void;
     onTerminalFontSizeChange: (size: TerminalFontSize) => void;
     onUrlChange: (value: string) => void;
@@ -161,6 +207,7 @@ const SettingsView = ({
     connectionDetail,
     debugEntries,
     onConnect,
+    onNavigate,
     onToggleDebug,
     onTerminalFontSizeChange,
     onUrlChange,
@@ -220,8 +267,13 @@ const SettingsView = ({
 
             <section className="settings-section" aria-labelledby="settings-connection-title">
                 <div className="settings-section-heading"><div><h2 id="settings-connection-title">连接</h2><p>{connected ? '已连接到江湖服务器。' : connectionDetail || '尚未连接到江湖服务器。'}</p></div><span className={'settings-connection-dot ' + (connected ? 'connected' : '')} /></div>
-                <div className="settings-connection-form"><label htmlFor="settings-server-url">WebSocket 地址</label><input id="settings-server-url" onChange={(event) => onUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button className="settings-action primary" onClick={onConnect} type="button">{connected ? '重新连接' : '连接'}</button></div>
+                <div className="settings-connection-form"><label htmlFor="settings-server-url">WebSocket 地址</label><input id="settings-server-url" onChange={(event) => onUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button className="settings-action primary" disabled={Boolean(urlError)} onClick={onConnect} type="button">{connected ? '重新连接' : '连接'}</button></div>
                 {urlError ? <p className="settings-hint settings-connection-error" role="alert">{urlError}</p> : <p className="settings-hint">地址仅在不含账号、密码、查询参数时记住。</p>}
+            </section>
+
+            <section className="settings-section" aria-labelledby="settings-help-title">
+                <div className="settings-section-heading"><div><h2 id="settings-help-title">帮助</h2><p>查看客户端操作、移动和消息说明。</p></div><Icon name="help" size={24} /></div>
+                <div className="settings-row settings-help-row"><div><strong>客户端帮助</strong><small>打开完整的操作与命令说明。</small></div><button className="settings-action" onClick={() => onNavigate('help')} type="button">查看帮助</button></div>
             </section>
 
             <section className="settings-section settings-debug-section" aria-labelledby="settings-debug-title">
@@ -247,7 +299,9 @@ export const App = () => {
     const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(readTerminalFontSize);
     const [commandDraft, setCommandDraft] = useState('');
     const [commandHistory, setCommandHistory] = useState<string[]>([]);
+    const [unreadChatCount, setUnreadChatCount] = useState(0);
     const autoConnectStarted = useRef(false);
+    const observedChatMessageIds = useRef(new Set<string>());
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
     const urlError = getMudUrlCompatibilityMessage(url);
@@ -266,6 +320,28 @@ export const App = () => {
             setHideUpdatePrompt(false);
         }
     }, [pwa.updateAvailable]);
+
+    useEffect(() => {
+        if (client.chatMessages.length === 0) {
+            observedChatMessageIds.current.clear();
+            setUnreadChatCount(0);
+            return;
+        }
+
+        const newIncomingCount = client.chatMessages.reduce((count, message) => {
+            if (observedChatMessageIds.current.has(message.message_id)) {
+                return count;
+            }
+            observedChatMessageIds.current.add(message.message_id);
+            return count + (message.direction === 'in' ? 1 : 0);
+        }, 0);
+
+        if (activeView === 'chat') {
+            setUnreadChatCount(0);
+        } else if (newIncomingCount > 0) {
+            setUnreadChatCount((current) => Math.min(100, current + newIncomingCount));
+        }
+    }, [activeView, client.chatMessages]);
 
     const navigate = (view: ViewKey) => {
         if (view === 'inventory') {
@@ -307,7 +383,7 @@ export const App = () => {
     } else if (activeView === 'quests') {
         page = <main className="page-main"><div className="page-surface"><PageHeading description="查看任务状态与进度。" icon="quest" title="任务" action={<span className="count-label">{client.quests?.quests.length ?? 0} 项当前</span>} /><QuestPanel connected={connected} embedded snapshot={client.quests} /></div></main>;
     } else if (activeView === 'settings') {
-        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={handleConnect} onTerminalFontSizeChange={handleTerminalFontSizeChange} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} terminalFontSize={terminalFontSize} urlError={urlError} url={url} />;
+        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={handleConnect} onNavigate={navigate} onTerminalFontSizeChange={handleTerminalFontSizeChange} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} terminalFontSize={terminalFontSize} urlError={urlError} url={url} />;
     } else {
         page = <main className="page-main"><div className="page-surface chat-page-surface"><PageHeading description="查看消息并参与交流。" icon="message" title="消息" action={<span className="count-label">{client.chatMessages.length} 条消息</span>} /><ChatPanel capabilities={client.chatCapabilities} connected={connected} embedded messages={client.chatMessages} onSend={client.sendChat} targets={client.chatTargets} /></div></main>;
     }
@@ -327,6 +403,7 @@ export const App = () => {
             {!connected && <section className="connection-strip" aria-label="连接设置"><div className="connection-strip-copy"><span className="strip-led" /><span>{!pwa.isOnline ? '网络已断开，无法连接江湖' : busy ? '正在寻找江湖入口…' : '尚未连接到江湖服务器'}</span><small>{urlError || client.connectionDetail || '可修改 WebSocket 地址后重新连接'}</small></div><div className="connection-strip-form"><label htmlFor="server-url">服务器</label><input id="server-url" onChange={(event) => handleUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button disabled={Boolean(urlError)} onClick={handleConnect} type="button">{busy ? '重连' : '连接'}</button></div></section>}
 
             {activeView === 'jianghu' ? <main className="game-main">
+                <CompactPlayerStatus combat={client.combat} connected={connected} status={client.status} vitals={client.vitals} />
                 <aside className="left-rail"><PlayerCard connected={connected} status={client.status} vitals={client.vitals} /><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /><div className="rail-tip"><Icon name="spark" size={17} /><span>所有状态会随服务器快照实时更新</span></div></aside>
                 <section className="center-stage"><div className="scene-panel surface-card"><div className="scene-topline"><span><Icon name="mountain" size={16} />{roomArea}</span><span className="scene-status"><i />{connected ? '实时同步' : '等待连接'}</span></div><div className="scene-title-row"><h1>{roomTitle}</h1></div>{!client.room && <div className="scene-empty-state"><Icon name="mountain" size={20} /><span>{connected ? '当前没有房间信息' : '连接江湖后显示房间、出口与周围人物'}</span></div>}<Terminal connected={connected} onTerminalSize={client.setTerminalSize} segments={client.segments} terminalFontSize={terminalFontSize} /><CommandBar connected={connected} history={commandHistory} onHistoryChange={setCommandHistory} onSend={client.sendCommand} onValueChange={setCommandDraft} serverSensitive={client.serverSensitive} value={commandDraft} /></div></section>
                 <aside className="right-rail"><RoomPanel connected={connected} disabled={!connected} onMove={client.sendRoomMove} room={client.room} roomMap={client.roomMap} /><RoomEntities connected={connected} disabled={!connected} entities={client.entities} inventory={client.inventory} onAction={client.sendEntityAction} onGive={client.sendEntityGive} /></aside>
@@ -334,7 +411,7 @@ export const App = () => {
             </main> : page}
 
             {pwa.updateAvailable && !hideUpdatePrompt && <aside className="update-banner" role="status" aria-live="polite"><div><strong>客户端新版本已准备好</strong><span>闲时更新，不会自动刷新当前页面。</span></div><div className="update-banner-actions"><button onClick={() => setHideUpdatePrompt(true)} type="button">稍后</button><button className="primary" disabled={pwa.isUpdating} onClick={pwa.applyUpdate} type="button">{pwa.isUpdating ? '更新中…' : '更新'}</button></div></aside>}
-            <DockNav activeView={activeView} messageCount={client.chatMessages.length} onNavigate={navigate} questCount={client.quests?.quests.length ?? 0} />
+            <DockNav activeView={activeView} messageCount={unreadChatCount} onNavigate={navigate} questCount={client.quests?.quests.length ?? 0} />
             {showDebug && <DebugPanel entries={client.debugEntries} onClose={() => setShowDebug(false)} />}
         </div>
     );

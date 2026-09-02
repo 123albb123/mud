@@ -25,4 +25,24 @@ describe('EquipmentPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: '卸下' }));
         expect(onAction).toHaveBeenCalledWith('i-sword', 'unwield');
     });
+
+    it('keeps a disconnected equipment snapshot readable but disables unequip actions', () => {
+        render(
+            <EquipmentPanel
+                connected={false}
+                onAction={() => undefined}
+                slotOrder={['weapon']}
+                slots={[{
+                    slot: 'weapon',
+                    item_id: 'i-sword',
+                    name: '长剑',
+                    command_id: 'sword',
+                    type: 'weapon',
+                    actions: [{ id: 'unwield' }],
+                }]}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: /主手武器/ }));
+        expect(screen.getByRole('button', { name: '卸下' })).toBeDisabled();
+    });
 });

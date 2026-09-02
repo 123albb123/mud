@@ -47,4 +47,11 @@ describe('InventoryPanel', () => {
         render(<InventoryPanel connected={false} items={[]} onAction={() => undefined} />);
         expect(screen.getByText('连接江湖后查看行囊')).toBeInTheDocument();
     });
+
+    it('keeps a disconnected inventory snapshot readable but disables its actions', () => {
+        render(<InventoryPanel connected={false} items={items} onAction={() => undefined} />);
+        fireEvent.click(screen.getAllByRole('button', { name: /金创药/ })[0]);
+        expect(screen.getByRole('button', { name: '吃' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '丢弃' })).toBeDisabled();
+    });
 });

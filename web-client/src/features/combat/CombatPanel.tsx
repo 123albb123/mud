@@ -27,6 +27,21 @@ const healthLabels: Record<string, string> = {
     unknown: '状态不明',
 };
 
+const targetTypeLabels: Record<CombatTargetType, string> = {
+    npc: 'NPC',
+    player: '玩家',
+};
+
+const targetTypeLabel = (type: RoomEntity['type']): string => {
+    if (type === 'npc') {
+        return targetTypeLabels.npc;
+    }
+    if (type === 'player') {
+        return targetTypeLabels.player;
+    }
+    return '实体';
+};
+
 export const CombatPanel = ({ actions, combat, connected = true, disabled, entities, onAction, status }: CombatPanelProps) => {
     const targetMode = (action: CombatAction): CombatTargetMode => action.target_mode
         ?? (action.requires_target ? 'required' : 'optional');
@@ -42,11 +57,17 @@ export const CombatPanel = ({ actions, combat, connected = true, disabled, entit
         () => entities.filter((entity) => targetActions.some((action) => allowsEntity(action, entity.type))),
         [entities, targetActions],
     );
+    const targetEntityById = useMemo(
+        () => new Map(targetEntities.map((entity) => [entity.entity_id, entity])),
+        [targetEntities],
+    );
     const primaryTarget = combat?.targets.find((target) => target.entity_id === combat.primary_target)
         ?? combat?.targets[0];
     const [targetId, setTargetId] = useState('');
     const targetTouched = useRef(false);
     const actionDisabled = disabled || status?.can_act === false || combat?.can_act === false;
+    const hasOptionalTarget = targetActions.some((action) => targetMode(action) === 'optional');
+    const targetPlaceholder = hasOptionalTarget ? '不指定目标（可选）' : '请选择目标';
 
     useEffect(() => {
         const preferred = targetEntities.some((entity) => entity.entity_id === primaryTarget?.entity_id)
@@ -78,7 +99,7 @@ export const CombatPanel = ({ actions, combat, connected = true, disabled, entit
             <div className="combat-target" aria-live="polite">
                 {primaryTarget ? (
                     <>
-                        <strong>{primaryTarget.name}</strong>
+                        <strong>{primaryTarget.name}{targetEntityById.get(primaryTarget.entity_id) && <span className="combat-target-type-chip">{targetTypeLabel(targetEntityById.get(primaryTarget.entity_id)!.type)}</span>}</strong>
                         <span>{primaryTarget.relation === 'kill' ? '生死相搏' : '切磋'} · {healthLabels[primaryTarget.health]}</span>
                     </>
                 ) : (
@@ -90,15 +111,16 @@ export const CombatPanel = ({ actions, combat, connected = true, disabled, entit
                     <label htmlFor="combat-target">目标</label>
                     <select
                         id="combat-target"
+                        disabled={actionDisabled}
                         onChange={(event) => {
                             targetTouched.current = true;
                             setTargetId(event.target.value);
                         }}
                         value={targetId}
                     >
-                        <option value="">不指定目标（可选）</option>
+                        <option value="">{targetPlaceholder}</option>
                         {targetEntities.map((entity) => (
-                            <option key={entity.entity_id} value={entity.entity_id}>{entity.name}</option>
+                            <option key={entity.entity_id} value={entity.entity_id}>{entity.name} · {targetTypeLabel(entity.type)}</option>
                         ))}
                     </select>
                     <div className="combat-action-grid">
