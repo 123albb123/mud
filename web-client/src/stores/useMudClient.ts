@@ -60,10 +60,17 @@ export interface ProtocolDebugEntry {
     message: string;
 }
 
-export const defaultMudUrl = (): string => {
-    const secure = window.location.protocol === 'https:';
-    const host = window.location.hostname || '127.0.0.1';
-    return `${secure ? 'wss' : 'ws'}://${host}:8888`;
+export interface MudPageLocation {
+    protocol: string;
+    host: string;
+}
+
+export const defaultMudUrl = (pageLocation?: MudPageLocation): string => {
+    const location = pageLocation ?? (typeof window === 'undefined'
+        ? { protocol: 'http:', host: '127.0.0.1' }
+        : window.location);
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${location.host}`;
 };
 
 export const useMudClient = () => {

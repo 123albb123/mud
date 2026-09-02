@@ -13,7 +13,7 @@ import { Terminal } from '../features/terminal/Terminal';
 import type { CharacterStatus, CharacterVitals } from '../protocol/gmcp/gmcp';
 import {
     clientVersion,
-    isSafeMudUrl,
+    getMudUrlCompatibilityMessage,
     persistMudUrl,
     readLastMudUrl,
     usePwa,
@@ -128,6 +128,7 @@ type SettingsViewProps = {
     onUrlChange: (value: string) => void;
     pwa: ReturnType<typeof usePwa>;
     showDebug: boolean;
+    urlError: string;
     url: string;
 };
 
@@ -140,16 +141,21 @@ const SettingsView = ({
     onUrlChange,
     pwa,
     showDebug,
+    urlError,
     url,
 }: SettingsViewProps) => {
-    const installStatus = pwa.isStandalone
+    const installStatus = !pwa.secureContext
+        ? '普通 Web 模式'
+        : pwa.isStandalone
         ? '已作为应用运行'
         : pwa.canInstall
             ? '可安装到设备'
             : pwa.isIosSafari
                 ? '可安装到设备'
                 : '当前浏览器未提供安装入口';
-    const notificationStatus = !pwa.notificationPermission || pwa.notificationPermission === 'unsupported'
+    const notificationStatus = !pwa.secureContext
+        ? '普通 Web 模式下不可用'
+        : !pwa.notificationAvailable || !pwa.notificationPermission || pwa.notificationPermission === 'unsupported'
         ? '当前浏览器不支持系统通知'
         : pwa.notificationPermission === 'denied'
             ? '浏览器已拒绝通知，请在系统设置中允许'
@@ -165,8 +171,9 @@ const SettingsView = ({
             <section className="settings-section" aria-labelledby="settings-app-title">
                 <div className="settings-section-heading"><div><h2 id="settings-app-title">应用</h2><p>把炎黄放到主屏幕，以独立应用方式打开。</p></div><span className="settings-section-mark">炎</span></div>
                 <div className="settings-row"><div><strong>安装状态</strong><small>{installStatus}</small></div>{pwa.canInstall && !pwa.isStandalone && <button className="settings-action primary" onClick={() => { void pwa.promptInstall(); }} type="button">安装应用</button>}</div>
-                {pwa.isIosSafari && !pwa.isStandalone && <p className="settings-hint">Safari → 分享 → 添加到主屏幕</p>}
-                <div className="settings-row"><div><strong>客户端版本</strong><small>{clientVersion}</small></div>{pwa.serviceWorkerSupported && <button className="settings-action" disabled={pwa.updateStatus === 'checking'} onClick={() => { void pwa.checkForUpdate(); }} type="button">{pwa.updateStatus === 'checking' ? '检查中…' : '检查更新'}</button>}</div>
+                {!pwa.secureContext && <p className="settings-hint">当前为普通 Web 模式。通过 HTTPS 地址访问可使用安装、离线更新和系统通知。</p>}
+                {pwa.secureContext && pwa.isIosSafari && !pwa.isStandalone && <p className="settings-hint">Safari → 分享 → 添加到主屏幕</p>}
+                <div className="settings-row"><div><strong>客户端版本</strong><small>{clientVersion}</small></div>{pwa.serviceWorkerAvailable && <button className="settings-action" disabled={pwa.updateStatus === 'checking'} onClick={() => { void pwa.checkForUpdate(); }} type="button">{pwa.updateStatus === 'checking' ? '检查中…' : '检查更新'}</button>}</div>
                 {pwa.updateStatus === 'latest' && <p className="settings-feedback" role="status">当前已是最新客户端</p>}
                 {pwa.updateStatus === 'error' && <p className="settings-feedback error" role="status">暂时无法检查更新</p>}
                 {pwa.updateAvailable && <div className="settings-update-row"><strong>客户端新版本已准备好</strong><button className="settings-action primary" disabled={pwa.isUpdating} onClick={pwa.applyUpdate} type="button">{pwa.isUpdating ? '更新中…' : '更新'}</button></div>}
@@ -174,15 +181,15 @@ const SettingsView = ({
 
             <section className="settings-section" aria-labelledby="settings-notification-title">
                 <div className="settings-section-heading"><div><h2 id="settings-notification-title">通知</h2><p>只在页面未聚焦时提醒新的私聊消息。</p></div><Icon name="message" size={24} /></div>
-                <div className="settings-row"><div><strong>通知状态</strong><small>{notificationStatus}</small></div>{pwa.notificationsEnabled ? <button className="settings-action" onClick={pwa.disableNotifications} type="button">关闭通知</button> : pwa.notificationPermission !== 'denied' && pwa.notificationPermission !== 'unsupported' && <button className="settings-action primary" onClick={() => { void pwa.enableNotifications(); }} type="button">开启通知</button>}</div>
-                {pwa.notificationPermission === 'granted' && <label className="settings-select-row"><span>通知内容</span><select aria-label="通知内容" disabled={!pwa.notificationsEnabled} onChange={(event) => pwa.setNotificationContent(event.target.value as 'body' | 'summary')} value={pwa.notificationContent}><option value="body">显示简短正文</option><option value="summary">仅提示收到新消息</option></select></label>}
+                <div className="settings-row"><div><strong>通知状态</strong><small>{notificationStatus}</small></div>{pwa.notificationsEnabled ? <button className="settings-action" onClick={pwa.disableNotifications} type="button">关闭通知</button> : pwa.notificationAvailable && pwa.notificationPermission !== 'denied' && pwa.notificationPermission !== 'unsupported' && <button className="settings-action primary" onClick={() => { void pwa.enableNotifications(); }} type="button">开启通知</button>}</div>
+                {pwa.notificationAvailable && pwa.notificationPermission === 'granted' && <label className="settings-select-row"><span>通知内容</span><select aria-label="通知内容" disabled={!pwa.notificationsEnabled} onChange={(event) => pwa.setNotificationContent(event.target.value as 'body' | 'summary')} value={pwa.notificationContent}><option value="body">显示简短正文</option><option value="summary">仅提示收到新消息</option></select></label>}
                 <p className="settings-hint">通知依赖此页面仍在运行；关闭应用或系统冻结页面后不保证实时提醒。</p>
             </section>
 
             <section className="settings-section" aria-labelledby="settings-connection-title">
                 <div className="settings-section-heading"><div><h2 id="settings-connection-title">连接</h2><p>{connected ? '已连接到江湖服务器。' : connectionDetail || '尚未连接到江湖服务器。'}</p></div><span className={'settings-connection-dot ' + (connected ? 'connected' : '')} /></div>
                 <div className="settings-connection-form"><label htmlFor="settings-server-url">WebSocket 地址</label><input id="settings-server-url" onChange={(event) => onUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button className="settings-action primary" onClick={onConnect} type="button">{connected ? '重新连接' : '连接'}</button></div>
-                {!isSafeMudUrl(url) && <p className="settings-hint">地址仅在不含账号、密码、查询参数时记住。</p>}
+                {urlError ? <p className="settings-hint settings-connection-error" role="alert">{urlError}</p> : <p className="settings-hint">地址仅在不含账号、密码、查询参数时记住。</p>}
             </section>
 
             <section className="settings-section settings-debug-section" aria-labelledby="settings-debug-title">
@@ -208,13 +215,16 @@ export const App = () => {
     const autoConnectStarted = useRef(false);
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
+    const urlError = getMudUrlCompatibilityMessage(url);
 
     useEffect(() => {
         if (!autoConnectStarted.current) {
             autoConnectStarted.current = true;
-            client.connect(url);
+            if (!urlError) {
+                client.connect(url);
+            }
         }
-    }, [client.connect, url]);
+    }, [client.connect, url, urlError]);
 
     useEffect(() => {
         if (!pwa.updateAvailable) {
@@ -235,6 +245,13 @@ export const App = () => {
         persistMudUrl(value);
     };
 
+    const handleConnect = () => {
+        if (urlError) {
+            return;
+        }
+        client.connect(url);
+    };
+
     let page: ReactNode;
     if (activeView === 'map') {
         page = <MapView connected={connected} exploredMap={client.exploredMap} onMove={client.sendRoomMove} snapshot={client.roomMap} />;
@@ -249,7 +266,7 @@ export const App = () => {
     } else if (activeView === 'quests') {
         page = <main className="page-main"><div className="page-surface"><PageHeading description="查看任务状态与进度。" icon="quest" title="任务" action={<span className="count-label">{client.quests?.quests.length ?? 0} 项当前</span>} /><QuestPanel connected={connected} embedded snapshot={client.quests} /></div></main>;
     } else if (activeView === 'settings') {
-        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={() => client.connect(url)} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} url={url} />;
+        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={handleConnect} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} urlError={urlError} url={url} />;
     } else {
         page = <main className="page-main"><div className="page-surface chat-page-surface"><PageHeading description="查看消息并参与交流。" icon="message" title="消息" action={<span className="count-label">{client.chatMessages.length} 条消息</span>} /><ChatPanel capabilities={client.chatCapabilities} connected={connected} embedded messages={client.chatMessages} onSend={client.sendChat} targets={client.chatTargets} /></div></main>;
     }
@@ -266,7 +283,7 @@ export const App = () => {
             </header>
 
             {!pwa.isOnline && <div className="network-status-banner" role="status"><span className="strip-led" />网络已断开，无法连接江湖</div>}
-            {!connected && <section className="connection-strip" aria-label="连接设置"><div className="connection-strip-copy"><span className="strip-led" /><span>{!pwa.isOnline ? '网络已断开，无法连接江湖' : busy ? '正在寻找江湖入口…' : '尚未连接到江湖服务器'}</span><small>{client.connectionDetail || '可修改 WebSocket 地址后重新连接'}</small></div><div className="connection-strip-form"><label htmlFor="server-url">服务器</label><input id="server-url" onChange={(event) => handleUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button onClick={() => client.connect(url)} type="button">{busy ? '重连' : '连接'}</button></div></section>}
+            {!connected && <section className="connection-strip" aria-label="连接设置"><div className="connection-strip-copy"><span className="strip-led" /><span>{!pwa.isOnline ? '网络已断开，无法连接江湖' : busy ? '正在寻找江湖入口…' : '尚未连接到江湖服务器'}</span><small>{urlError || client.connectionDetail || '可修改 WebSocket 地址后重新连接'}</small></div><div className="connection-strip-form"><label htmlFor="server-url">服务器</label><input id="server-url" onChange={(event) => handleUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button disabled={Boolean(urlError)} onClick={handleConnect} type="button">{busy ? '重连' : '连接'}</button></div></section>}
 
             {activeView === 'jianghu' ? <main className="game-main">
                 <aside className="left-rail"><PlayerCard connected={connected} status={client.status} vitals={client.vitals} /><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /><div className="rail-tip"><Icon name="spark" size={17} /><span>所有状态会随服务器快照实时更新</span></div></aside>

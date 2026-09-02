@@ -28,6 +28,9 @@ self.addEventListener('message', (event) => {
     }
 });
 
+const isNavigationRequest = (request) =>
+    request.mode === 'navigate' || request.destination === 'document';
+
 const isStaticAppRequest = (request) => {
     if (request.method !== 'GET' || !['http:', 'https:'].includes(new URL(request.url).protocol)) {
         return false;
@@ -37,7 +40,7 @@ const isStaticAppRequest = (request) => {
         url.pathname === APP_SCOPE + 'service-worker.js') {
         return false;
     }
-    return PRECACHE_URLS.includes(url.pathname) || STATIC_DESTINATIONS.has(request.destination);
+    return isNavigationRequest(request) || PRECACHE_URLS.includes(url.pathname) || STATIC_DESTINATIONS.has(request.destination);
 };
 
 self.addEventListener('fetch', (event) => {
@@ -50,9 +53,28 @@ self.addEventListener('fetch', (event) => {
                 return response;
             }
             const copy = response.clone();
-            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+            if (!isNavigationRequest(event.request)) {
+                void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+            }
             return response;
-        }).catch(() => caches.match(APP_SCOPE + 'index.html'))),
+        }).catch(() => isNavigationRequest(event.request)
+            ? caches.match(APP_SCOPE + 'index.html')
+            : Response.error())),
+    );
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            for (const client of clientList) {
+                const url = new URL(client.url);
+                if (url.origin === self.location.origin && url.pathname.startsWith(APP_SCOPE) && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            return self.clients.openWindow(APP_SCOPE + 'index.html');
+        }),
     );
 });
 `;

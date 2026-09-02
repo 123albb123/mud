@@ -1,15 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../protocol/gmcp/gmcp';
 import {
     createPrecacheEntries,
     getCacheName,
     getInstallPlatform,
+    getMudUrlCompatibilityMessage,
     getNotificationPermission,
+    getPwaCapabilities,
     isIosSafari,
+    isMudUrlCompatibleWithPage,
     isSafeMudUrl,
     isStandaloneMode,
+    notifyChatMessage,
     notificationBody,
     notificationTitle,
+    type NotificationConstructor,
     shouldNotifyForChat,
     truncateNotificationText,
 } from './pwa';
@@ -65,6 +70,59 @@ describe('PWA utilities', () => {
         expect(notificationTitle(incomingTell)).toBe('张三发来消息');
         expect(notificationBody(incomingTell, 'summary')).toBe('收到新消息');
         expect(notificationBody(incomingTell, 'body')).toBe('江湖见。');
+    });
+
+    it('enforces HTTPS/WSS compatibility and exposes secure-context capabilities', () => {
+        expect(isMudUrlCompatibleWithPage('ws://192.168.1.20:8888', 'http:')).toBe(true);
+        expect(isMudUrlCompatibleWithPage('wss://mud.example.test', 'http:')).toBe(true);
+        expect(isMudUrlCompatibleWithPage('wss://mud.example.test', 'https:')).toBe(true);
+        expect(isMudUrlCompatibleWithPage('wss://mud.example.test:8443', 'https:')).toBe(true);
+        expect(isMudUrlCompatibleWithPage('ws://mud.example.test', 'https:')).toBe(false);
+        expect(getMudUrlCompatibilityMessage('ws://mud.example.test', 'https:')).toBe('HTTPS 页面需要使用 wss:// WebSocket 地址。');
+        expect(getMudUrlCompatibilityMessage('ws://192.168.1.20:8888', 'http:')).toBe('');
+        expect(getPwaCapabilities({ isSecureContext: false, hasServiceWorker: true, hasNotification: true })).toEqual({
+            notificationAvailable: false,
+            secureContext: false,
+            serviceWorkerAvailable: false,
+        });
+        expect(getPwaCapabilities({ isSecureContext: true, hasServiceWorker: true, hasNotification: true })).toEqual({
+            notificationAvailable: true,
+            secureContext: true,
+            serviceWorkerAvailable: true,
+        });
+    });
+
+    it('prefers service-worker notifications and only falls back on desktop', async () => {
+        const showNotification = vi.fn(async () => undefined);
+        const desktopNotification = vi.fn();
+        const desktop = class {
+            static permission = 'granted' as NotificationPermission;
+            constructor(title: string, options?: NotificationOptions) {
+                desktopNotification(title, options);
+            }
+        } as unknown as NotificationConstructor;
+        const serviceWorkerDelivery = await notifyChatMessage(incomingTell, {
+            content: 'body',
+            notification: desktop,
+            notificationsEnabled: true,
+            pageVisibleAndFocused: false,
+            permission: 'granted',
+            registration: { showNotification },
+        });
+        expect(serviceWorkerDelivery).toBe('service-worker');
+        expect(showNotification).toHaveBeenCalledWith('张三发来消息', expect.objectContaining({ body: '江湖见。' }));
+        expect(desktopNotification).not.toHaveBeenCalled();
+
+        const desktopDelivery = await notifyChatMessage(incomingTell, {
+            content: 'summary',
+            notification: desktop,
+            notificationsEnabled: true,
+            pageVisibleAndFocused: false,
+            permission: 'granted',
+            registration: null,
+        });
+        expect(desktopDelivery).toBe('desktop');
+        expect(desktopNotification).toHaveBeenCalledWith('张三发来消息', expect.objectContaining({ body: '收到新消息' }));
     });
 
     it('does not expose excessive notification text or credentials in stored URLs', () => {

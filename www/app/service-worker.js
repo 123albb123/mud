@@ -1,7 +1,7 @@
-const CACHE_NAME = "yanhuang-web-v0.1.0-fd36891a";
+const CACHE_NAME = "yanhuang-web-v0.1.0-66368cb0";
 const CACHE_NAME_PREFIX = 'yanhuang-web-';
 const APP_SCOPE = '/app/';
-const PRECACHE_URLS = ["/app/index.html","/app/manifest.json","/app/icons/icon-192.png","/app/icons/icon-512.png","/app/icons/icon-maskable-512.png","/app/icons/apple-touch-icon.png","/app/assets/index-Ba_LaKin.js","/app/assets/index-HTARz4h-.css"];
+const PRECACHE_URLS = ["/app/index.html","/app/manifest.json","/app/icons/icon-192.png","/app/icons/icon-512.png","/app/icons/icon-maskable-512.png","/app/icons/apple-touch-icon.png","/app/assets/index-BFalSGaM.js","/app/assets/index-CzWRG59r.css"];
 const STATIC_DESTINATIONS = new Set(['script', 'style', 'image', 'font', 'manifest']);
 
 self.addEventListener('install', (event) => {
@@ -28,6 +28,9 @@ self.addEventListener('message', (event) => {
     }
 });
 
+const isNavigationRequest = (request) =>
+    request.mode === 'navigate' || request.destination === 'document';
+
 const isStaticAppRequest = (request) => {
     if (request.method !== 'GET' || !['http:', 'https:'].includes(new URL(request.url).protocol)) {
         return false;
@@ -37,7 +40,7 @@ const isStaticAppRequest = (request) => {
         url.pathname === APP_SCOPE + 'service-worker.js') {
         return false;
     }
-    return PRECACHE_URLS.includes(url.pathname) || STATIC_DESTINATIONS.has(request.destination);
+    return isNavigationRequest(request) || PRECACHE_URLS.includes(url.pathname) || STATIC_DESTINATIONS.has(request.destination);
 };
 
 self.addEventListener('fetch', (event) => {
@@ -50,8 +53,27 @@ self.addEventListener('fetch', (event) => {
                 return response;
             }
             const copy = response.clone();
-            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+            if (!isNavigationRequest(event.request)) {
+                void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+            }
             return response;
-        }).catch(() => caches.match(APP_SCOPE + 'index.html'))),
+        }).catch(() => isNavigationRequest(event.request)
+            ? caches.match(APP_SCOPE + 'index.html')
+            : Response.error())),
+    );
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            for (const client of clientList) {
+                const url = new URL(client.url);
+                if (url.origin === self.location.origin && url.pathname.startsWith(APP_SCOPE) && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            return self.clients.openWindow(APP_SCOPE + 'index.html');
+        }),
     );
 });

@@ -136,6 +136,10 @@ const messageFixture: ChatMessage = {
 describe('App', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Object.defineProperty(window, 'isSecureContext', {
+            configurable: true,
+            value: false,
+        });
     });
 
     it('keeps disconnected views empty and preserves the five-item mobile navigation', () => {
@@ -266,5 +270,17 @@ describe('App', () => {
         fireEvent.click(screen.getByRole('button', { name: /^帮助$/ }));
         expectPageTitle('帮助');
         expect(screen.queryByText('GUIDE · HELP')).not.toBeInTheDocument();
+    });
+
+    it('keeps the insecure HTTP deployment in ordinary Web mode without PWA prompts', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient());
+        render(<App />);
+
+        fireEvent.click(screen.getByRole('button', { name: '打开应用设置' }));
+        expect(screen.getByText('普通 Web 模式')).toBeInTheDocument();
+        expect(screen.getByText('当前为普通 Web 模式。通过 HTTPS 地址访问可使用安装、离线更新和系统通知。')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '检查更新' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '开启通知' })).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: '连接' }).length).toBeGreaterThan(0);
     });
 });

@@ -3903,6 +3903,10 @@ kbd,
     color: #8a8377;
 }
 
+.settings-connection-error {
+    color: #d6a36d;
+}
+
 .settings-feedback {
     margin-top: 9px;
     color: var(--teal);

@@ -37,6 +37,27 @@ export interface NotificationContext {
     };
 }
 
+export interface NotificationConstructor {
+    new (title: string, options?: NotificationOptions): Notification;
+    permission: NotificationPermission;
+    requestPermission: () => Promise<NotificationPermission>;
+}
+
+export interface NotificationDeliveryContext {
+    content: NotificationContent;
+    notification?: NotificationConstructor;
+    notificationsEnabled: boolean;
+    pageVisibleAndFocused: boolean;
+    permission: NotificationPermissionState;
+    registration?: { showNotification?: (title: string, options?: NotificationOptions) => Promise<void> } | null;
+}
+
+export interface PwaCapabilities {
+    notificationAvailable: boolean;
+    secureContext: boolean;
+    serviceWorkerAvailable: boolean;
+}
+
 const staticAppPaths = [
     `${PWA_SCOPE}index.html`,
     `${PWA_SCOPE}manifest.json`,
@@ -100,6 +121,16 @@ export const getNotificationPermission = (context: NotificationContext): Notific
         : 'unsupported';
 };
 
+export const getPwaCapabilities = (context: {
+    hasNotification: boolean;
+    hasServiceWorker: boolean;
+    isSecureContext: boolean;
+}): PwaCapabilities => ({
+    notificationAvailable: context.isSecureContext && context.hasNotification,
+    secureContext: context.isSecureContext,
+    serviceWorkerAvailable: context.isSecureContext && context.hasServiceWorker,
+});
+
 export const shouldNotifyForChat = (message: ChatMessage, pageVisibleAndFocused: boolean): boolean =>
     !pageVisibleAndFocused && message.direction === 'in' && notificationKinds.has(message.kind);
 
@@ -115,6 +146,42 @@ export const notificationTitle = (message: ChatMessage): string => `${message.se
 
 export const notificationBody = (message: ChatMessage, content: NotificationContent): string =>
     content === 'summary' ? '收到新消息' : truncateNotificationText(message.text);
+
+export type NotificationDelivery = 'service-worker' | 'desktop' | 'none';
+
+export const notifyChatMessage = async (
+    message: ChatMessage,
+    context: NotificationDeliveryContext,
+): Promise<NotificationDelivery> => {
+    if (context.permission !== 'granted' || !context.notificationsEnabled ||
+        !shouldNotifyForChat(message, context.pageVisibleAndFocused)) {
+        return 'none';
+    }
+
+    const title = notificationTitle(message);
+    const options: NotificationOptions = {
+        body: notificationBody(message, context.content),
+        icon: `${PWA_SCOPE}icons/icon-192.png`,
+        tag: `chat-${message.message_id}`,
+    };
+    if (context.registration && typeof context.registration.showNotification === 'function') {
+        try {
+            await context.registration.showNotification(title, options);
+            return 'service-worker';
+        } catch {
+            return 'none';
+        }
+    }
+    if (context.notification) {
+        try {
+            new context.notification(title, options);
+            return 'desktop';
+        } catch {
+            return 'none';
+        }
+    }
+    return 'none';
+};
 
 const getStorage = (): Storage | null => {
     if (typeof window === 'undefined') {
@@ -154,9 +221,32 @@ export const isSafeMudUrl = (value: string): boolean => {
     }
 };
 
-export const readLastMudUrl = (fallback: string): string => {
+const getPageProtocol = (): string =>
+    typeof window === 'undefined' ? 'http:' : window.location.protocol;
+
+export const isMudUrlCompatibleWithPage = (value: string, pageProtocol = getPageProtocol()): boolean => {
+    if (!isSafeMudUrl(value)) {
+        return false;
+    }
+    if (pageProtocol !== 'https:') {
+        return true;
+    }
+    return new URL(value).protocol === 'wss:';
+};
+
+export const getMudUrlCompatibilityMessage = (value: string, pageProtocol = getPageProtocol()): string => {
+    if (!isSafeMudUrl(value)) {
+        return '请输入有效的 ws:// 或 wss:// WebSocket 地址。';
+    }
+    if (pageProtocol === 'https:' && new URL(value).protocol !== 'wss:') {
+        return 'HTTPS 页面需要使用 wss:// WebSocket 地址。';
+    }
+    return '';
+};
+
+export const readLastMudUrl = (fallback: string, pageProtocol = getPageProtocol()): string => {
     const stored = readStoredPreference(LAST_MUD_URL_KEY);
-    return stored && isSafeMudUrl(stored) ? stored : fallback;
+    return stored && isMudUrlCompatibleWithPage(stored, pageProtocol) ? stored : fallback;
 };
 
 export const persistMudUrl = (value: string): void => {
@@ -186,8 +276,11 @@ const getStandaloneContext = (): StandaloneContext => {
     };
 };
 
+const isSecurePage = (): boolean =>
+    typeof window !== 'undefined' && window.location.protocol === 'https:' && window.isSecureContext === true;
+
 const getInitialNotificationPermission = (): NotificationPermissionState => {
-    if (typeof window === 'undefined') {
+    if (!isSecurePage()) {
         return 'unsupported';
     }
     return getNotificationPermission({ Notification: window.Notification });
@@ -198,6 +291,18 @@ const getInitialNotificationContent = (): NotificationContent =>
 
 export const usePwa = (chatMessages: ChatMessage[]) => {
     const platform = useMemo(getPlatformContext, []);
+    const capabilities = useMemo<PwaCapabilities>(() => {
+        if (typeof window === 'undefined') {
+            return getPwaCapabilities({ hasNotification: false, hasServiceWorker: false, isSecureContext: false });
+        }
+        return getPwaCapabilities({
+            hasNotification: typeof window.Notification !== 'undefined',
+            hasServiceWorker: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+            isSecureContext: isSecurePage(),
+        });
+    }, []);
+    const { notificationAvailable, secureContext } = capabilities;
+    const serviceWorkerAvailable = import.meta.env.PROD && capabilities.serviceWorkerAvailable;
     const installPlatform = getInstallPlatform(platform);
     const iosSafari = installPlatform === 'ios-safari';
     const [standalone, setStandalone] = useState(() => isStandaloneMode(getStandaloneContext()));
@@ -222,6 +327,9 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
         const updateOnline = () => setIsOnline(navigator.onLine !== false);
         const updateStandalone = () => setStandalone(isStandaloneMode(getStandaloneContext()));
         const onBeforeInstallPrompt = (event: Event) => {
+            if (!secureContext) {
+                return;
+            }
             event.preventDefault();
             setInstallPrompt(event as BeforeInstallPromptEvent);
         };
@@ -241,10 +349,10 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
             window.removeEventListener('appinstalled', onAppInstalled);
             window.removeEventListener('resize', updateStandalone);
         };
-    }, []);
+    }, [secureContext]);
 
     useEffect(() => {
-        if (!import.meta.env.PROD || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+        if (!serviceWorkerAvailable || typeof navigator === 'undefined') {
             return undefined;
         }
 
@@ -292,11 +400,15 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
             currentRegistration?.removeEventListener('updatefound', onUpdateFound);
             navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
         };
-    }, []);
+    }, [serviceWorkerAvailable]);
 
     useEffect(() => {
-        const notification = typeof window === 'undefined' ? undefined : window.Notification;
-        const permission = getNotificationPermission({ Notification: notification });
+        const notification = notificationAvailable && typeof window !== 'undefined'
+            ? window.Notification
+            : undefined;
+        const permission = notificationAvailable
+            ? getNotificationPermission({ Notification: notification })
+            : 'unsupported';
         const pageVisibleAndFocused = typeof document !== 'undefined' &&
             document.visibilityState === 'visible' &&
             (typeof document.hasFocus !== 'function' || document.hasFocus());
@@ -306,24 +418,19 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
                 continue;
             }
             notifiedMessageIdsRef.current.add(message.message_id);
-            if (!notification || permission !== 'granted' || !notificationsEnabled ||
-                !shouldNotifyForChat(message, pageVisibleAndFocused)) {
-                continue;
-            }
-            try {
-                new notification(notificationTitle(message), {
-                    body: notificationBody(message, notificationContent),
-                    icon: `${PWA_SCOPE}icons/icon-192.png`,
-                    tag: `chat-${message.message_id}`,
-                });
-            } catch {
-                // Notification construction can fail when the platform revokes permission.
-            }
+            void notifyChatMessage(message, {
+                content: notificationContent,
+                notification,
+                notificationsEnabled,
+                pageVisibleAndFocused,
+                permission,
+                registration: serviceWorkerAvailable ? registration : null,
+            });
         }
         if (notifiedMessageIdsRef.current.size > 1000) {
             notifiedMessageIdsRef.current.clear();
         }
-    }, [chatMessages, notificationContent, notificationsEnabled]);
+    }, [chatMessages, notificationContent, notificationAvailable, notificationsEnabled, registration, serviceWorkerAvailable]);
 
     const promptInstall = useCallback(async () => {
         if (!installPrompt) {
@@ -340,8 +447,9 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
     }, [installPrompt]);
 
     const enableNotifications = useCallback(async () => {
-        if (typeof window === 'undefined' || typeof window.Notification === 'undefined') {
+        if (!secureContext || !notificationAvailable || typeof window === 'undefined' || typeof window.Notification === 'undefined') {
             setNotificationPermission('unsupported');
+            setNotificationsEnabled(false);
             return 'unsupported' as const;
         }
         const notification = window.Notification;
@@ -363,7 +471,7 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
             writeStoredPreference(NOTIFICATION_ENABLED_KEY, 'false');
         }
         return permission;
-    }, []);
+    }, [notificationAvailable, secureContext]);
 
     const disableNotifications = useCallback(() => {
         setNotificationsEnabled(false);
@@ -410,9 +518,11 @@ export const usePwa = (chatMessages: ChatMessage[]) => {
         isStandalone: standalone,
         installPlatform,
         isIosSafari: iosSafari,
-        canInstall: installPrompt !== null,
+        canInstall: secureContext && installPrompt !== null,
         promptInstall,
-        serviceWorkerSupported: import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+        notificationAvailable,
+        secureContext,
+        serviceWorkerAvailable,
         registration,
         updateAvailable,
         updateStatus,

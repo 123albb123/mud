@@ -1,14 +1,8 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
+import { getSourceContentHash } from './source-hash.mjs';
 
 const getBuildHash = () => {
-    if (process.env.VITE_BUILD_HASH) {
-        return process.env.VITE_BUILD_HASH;
-    }
-    try {
-        return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim() || 'local';
-    } catch {
-        return 'local';
-    }
+    return getSourceContentHash(process.cwd());
 };
 
 const result = spawnSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build'], {
