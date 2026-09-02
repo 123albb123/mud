@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
       args:
         FLUFFOS_COMMIT: de945701234d348e3dd3e7aee59bf9e06e58539b
-    image: yanhuang-mud:stage9
+    image: yanhuang-mud:stable
     container_name: yanhuang-mud
     restart: unless-stopped
     environment:

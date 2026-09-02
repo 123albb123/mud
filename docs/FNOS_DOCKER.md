@@ -1,6 +1,6 @@
 # 飞牛 FNOS Docker 稳定部署
 
-本文是本项目 Stage 9 的正式部署说明，目标环境为飞牛 FNOS 上的 Docker。它不管理已有的 Lucky，也不提供 Windows 原生、Linux 原生或 systemd 部署方案。
+本文是本项目 Stage 9.1 的正式部署说明，目标环境为飞牛 FNOS 上的 Docker。它不管理已有的 Lucky，也不提供 Windows 原生、Linux 原生或 systemd 部署方案。
 
 ## 1. 拓扑与边界
 
@@ -34,6 +34,8 @@ http://<NAS-IP>:8888/app/index.html
 - build stage：`debian:12-slim`，安装 C/C++、CMake、Ninja、Bison/Flex 及 FluffOS 所需开发库。
 - runtime stage：`debian:12-slim`，只保留 FluffOS driver、炎黄 mudlib、`www/app`、运行库、`curl`、`gosu` 和必要的时区/外部命令支持。
 - runtime 不包含 GCC、G++、CMake、Git、FluffOS 源码构建缓存或 Node.js。
+
+通过本阶段验收后，Compose 使用的生产镜像标签为 `yanhuang-mud:stable`。
 
 FluffOS 来源固定为 `https://gitee.com/fluffos/fluffos.git` 的提交：
 
@@ -229,7 +231,7 @@ docker compose ps
 curl -f http://127.0.0.1:8888/app/index.html
 ```
 
-完整 Stage 9 验收还应在 Docker 端口映射上实际确认：
+完整 Stage 9.1 验收还应在 Docker 端口映射上实际确认：
 
 - 8888 HTTP 页面、WebSocket 连接、Telnet negotiation 和 GMCP。
 - 通过 Web Client 登录测试角色，执行 `look`、`score`、`hp`、`inventory`、移动、NPC 点击、地图移动和 `say`。
@@ -239,9 +241,58 @@ curl -f http://127.0.0.1:8888/app/index.html
 - 从备份恢复到临时数据根目录后，同一角色仍可登录。
 - `cd web-client && npm test -- --run && npm run build` 在开发环境通过；测试不进入 runtime 镜像。
 
-浏览器回归继续覆盖现有 PWA、Terminal、NPC、Map、Chat 以及 390×844、844×390、1440×900 视口。内网 HTTP 不是完整 secure-context PWA；完整 PWA 入口使用现有 Lucky HTTPS 域名。没有实际验证的 iOS IME、外网 Lucky 域名或 FNOS 特定 UI 不在本文中虚构为已验证。
+浏览器回归继续覆盖现有 PWA、Terminal、NPC、Map、Chat 以及 390×844、844×390、1440×900 视口；实际结果见下一节。内网 HTTP 不是完整 secure-context PWA；完整 PWA 入口使用现有 Lucky HTTPS 域名。没有实际验证的 iOS IME、外网 Lucky 域名或 FNOS 特定 UI 不在本文中虚构为已验证。
 
-## 11. 常见问题
+## 11. Stage 9.1 实际验收记录
+
+以下记录对应 2026-09-02 的本地 Docker Compose 验收。它是可复核的 Docker 核心结果，不冒充真实 FNOS 设备、Lucky 外网域名或 iPhone 实机结果。
+
+| 项目 | 实际结果 |
+| --- | --- |
+| FNOS 实机/管理界面 | 未连接 FNOS；仅在 Docker Desktop `desktop-linux`、amd64/x86_64 上用 Compose CLI 验证 |
+| Docker / Compose | Docker Server `29.6.1`；Compose `v5.3.0` |
+| 构建 | 首次无缓存 `docker compose build --pull` 成功，约 262.3 秒；随后缓存重建及强制重建成功 |
+| FluffOS | 固定提交 `de945701234d348e3dd3e7aee59bf9e06e58539b`；Debian 12；镜像约 77,931,377 bytes；标签 `yanhuang-mud:stable` |
+| 服务 | Compose 服务 `yanhuang-mud`，`restart: unless-stopped`，healthcheck 为 `healthy`；空载采样约 0.02% CPU、8.547 MiB 内存 |
+| 端口与协议 | `5566` GB18030 Telnet、`6666` UTF-8 Telnet、`8888` HTTP + WebSocket；HTTP 返回 200，WebSocket 握手返回 101 且协商 `telnet` 子协议 |
+| GMCP | 实际登录收到 17 个 GMCP 包，覆盖 `Server.Hello`、`Room.Info`、`Room.Map`、`Room.Entities`、`Char.Vitals`、`Char.Inventory`、`Char.Skills`、`Combat.*`、`Quest.List` 和 `Chat.*` |
+
+### 游戏与 Web Client
+
+- 通过正常注册创建一次性角色并登录真实 Web Client；未使用伪造 save。登录后 `look`、`score`、`hp`、`inventory`、`skills` 均有真实终端返回。
+- Web Client 的行囊面板显示武林外传、皮靴和紫蟒袍；武学面板显示“暂无武学数据”。
+- 用方向按钮实际经过客店、北大街、中央广场、东大街、打铁铺五个房间；按钮驱动 `Web.Room.Move`，房间标题、出口和实体列表随 `Room.Info`/`Room.Map`/Transition 更新。
+- 实际点击 NPC 后使用“查看”，再用“询问”向周不通询问 `quest`；NPC 面板和终端均返回结果。未执行高风险战斗。
+- 使用 `say` 发送测试聊天内容，消息面板显示该条“说话”消息；由于没有第二个在线玩家，`tell`/`reply` 未做双人实测。
+- Terminal 的中文输出、ANSI/终端尺寸消息、命令输入、历史（ArrowUp）和滚动到底部入口均已检查；`www/app` 未因本次验收发生无意义重生成。
+- 5566 和 6666 均做过独立登录、`look`、`score`、`hp`、`skills`、`quit` 回归；两端均得到有效登录事件和非空输出。
+
+### 持久化、生命周期、备份恢复
+
+本地 Compose 验收使用的 bind mount 根目录为项目下的 `runtime/`；实际角色 save 路径为：
+
+```text
+F:\codex\YH\runtime\data\login\s\stageweb.o
+F:\codex\YH\runtime\data\user\s\stageweb.o
+```
+
+该角色是本次 Web Client 验收专用角色，已在停止容器后删除；最终 `runtime/data/login/` 和 `runtime/data/user/` 没有遗留该测试角色。生产 FNOS 应通过同目录根 `.env` 的 `YANHUANG_DATA_ROOT` 指向实际存储目录，不能照抄本机路径。
+
+- `docker compose restart`、`stop`/`start`、`down`/`up`、`up --force-recreate` 后，测试角色 save 和 `data/.env` 均仍在；`.env` 的 SHA-256 在生命周期操作前后保持不变。
+- 停止测试实例后执行 `docker/backup.sh`，得到 `yanhuang-2026-09-02_08-21-36.tar.gz`（105,211 bytes）。`tar -tzf` 确认包含 `data/.env`、`data/login/...`、`data/user/...`、daemon 数据和 `log/`。
+- 归档恢复到独立临时根目录 `runtime/stage9-restore` 后，用独立 Compose 项目启动；角色登录成功，随后删除临时容器、网络和恢复目录。没有删除主环境真实数据，也没有删除备份归档以外的用户文件。
+
+### 稳定性、安全与边界
+
+- 同一镜像在生命周期验收前曾连续运行约 53 分钟；期间健康检查正常。日志检查没有发现 fatal、panic、crash、OOM、权限拒绝、WebSocket 或 save 错误；已有 LPC warning 与本阶段回归错误分开判断。
+- runtime 中未发现 `gcc`、`g++`、`cmake`、`git`、`node`、`npm`；driver 以 UID 10001 的 `mud` 用户运行。Compose 未启用 privileged、host network 或 Docker socket。
+- 已有 Lucky 容器、网络、Compose、配置、证书和域名均未停止、重启、删除或修改。本地没有真实 Lucky 域名/证书访问条件，因此 HTTPS/WSS 外网链路未测试，不能宣称通过。
+- 390×844、844×390、1440×900 三个显式视口均测到对应窗口尺寸且文档宽度未溢出；没有真实 iPhone、iOS 输入法或 FNOS UI 条件，不能把这部分写成实机通过。
+- `web-client` 的 `npm test -- --run` 通过 24 个文件、116 个测试；`npm run build` 通过 TypeScript 与 Vite（39 个模块）。LPC、GMCP schema、PWA、Terminal、Map、Chat、NPC 代码及 `mudcore` 未修改。
+
+结论：`yanhuang-mud:stable` 的 Docker Compose 单人核心部署在上述 Docker 平台上通过；FNOS 实机界面、Lucky HTTPS/WSS 外网和 iPhone 实机仍需部署者按本文补测，不能合并为已验证结论。
+
+## 12. 常见问题
 
 ### 容器反复 unhealthy
 
