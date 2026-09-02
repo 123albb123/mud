@@ -1,0 +1,32 @@
+services:
+  yanhuang-mud:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        FLUFFOS_COMMIT: de945701234d348e3dd3e7aee59bf9e06e58539b
+    image: yanhuang-mud:stage9
+    container_name: yanhuang-mud
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "5566:5566"
+      - "6666:6666"
+      - "8888:8888"
+    volumes:
+      - "${YANHUANG_DATA_ROOT:-./runtime}/data:/mud/data"
+      - "${YANHUANG_DATA_ROOT:-./runtime}/log:/mud/log"
+      - "${YANHUANG_DATA_ROOT:-./runtime}/backup:/mud/backup"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS --max-time 5
+          http://127.0.0.1:8888/app/index.html > /dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 5
+    stop_signal: SIGHUP
+    stop_grace_period: 30s

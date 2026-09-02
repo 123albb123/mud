@@ -1,0 +1,44 @@
+.git
+.git/**
+**/.git
+**/.git/**
+
+# Local FluffOS checkout/build output and native binaries.
+fluffos/
+build/
+bin/
+binaries/
+
+# The runtime image uses committed www/app output, not the web source tree.
+web-client/
+node_modules/
+
+# Documentation and optional services are not needed by the runtime image.
+doc/
+docs/
+ai_service/
+
+# Never send credentials, runtime saves, logs, or old backups to Docker.
+.env
+**/.env
+data/*
+!data/.env.example
+!data/e2c_dict.o
+!data/emoted.o
+log/
+backup/
+runtime/
+save/
+dump/
+temp/
+*.log
+*.tar.gz
+*.sqlite
+*.sqlite3
+
+# Editor and local test output.
+.vscode/
+.idea/
+.cache/
+coverage/
+test-results/

@@ -15,45 +15,46 @@
 
 ![help](help.png "help")
 
-## 启动说明
+## 推荐部署：飞牛 FNOS Docker
 
-游戏集成了[mudcore](https://github.com/mudcore/mudcore)框架，请使用以下指令下载源码：
+本 fork 的稳定部署目标是飞牛 FNOS 上的 Docker。仓库已经提供可直接构建的
+`Dockerfile` 和 `docker-compose.yml`，详细的目录、持久化、备份、恢复、更新和
+Lucky 边界说明见 [docs/FNOS_DOCKER.md](docs/FNOS_DOCKER.md)。
 
-    # 从github安装（国外推荐）
-    git clone --recurse-submodules https://github.com/oiuv/mud.git
-    # 从gitee 安装（国内推荐）
-    git clone --recurse-submodules https://gitee.com/mudren/mud.git
+游戏集成了[mudcore](https://github.com/mudcore/mudcore)框架。首次取得源码后，确保子模块已初始化：
 
-如果你已经直接clone了项目，请使用以下指令更新子模块：
+    git clone --recurse-submodules https://github.com/123albb123/mud.git
+    cd mud
+    git submodule update --init --recursive
 
-    git submodule update --init
+在飞牛的 Compose 项目目录执行：
 
-> 提示：国内用户[mudcore](https://github.com/mudcore/mudcore)子模块可使用gitee镜像地址
+    docker compose build --pull
+    docker compose up -d
+    docker compose ps
 
-- https://gitee.com/mudcore/mudcore.git
+Compose 默认把真正的运行数据放在项目下的 `runtime/`，分别挂载为 `data/`、
+`log/` 和 `backup/`。如需放到飞牛指定存储位置，可在 Compose 文件同目录的本地
+`.env` 中设置一行 `YANHUANG_DATA_ROOT=/path/to/yanhuang-runtime`；该文件不会提交。
+首次启动会在数据目录中从 `data/.env.example` 创建 `data/.env`，不会覆盖已有配置。
 
-### 环境配置
+### 服务入口
 
-请把`data`目录中的`.env.example`复制为`.env`，并根据需要修改环境配置。
+| 入口 | 用途 |
+| --- | --- |
+| `http://<NAS-IP>:8888/app/index.html` | 内网现代 Web Client |
+| `5566` | GBK Telnet，默认仅内网 |
+| `6666` | UTF-8 Telnet，默认仅内网 |
+| `8888` | HTTP + WebSocket；现有 Lucky 可反代此端口 |
 
-### 启动服务
+Lucky 继续负责已有 HTTPS/WSS 外网入口，Docker Compose 不包含 Lucky、Caddy、Nginx
+或其他代理。生产 Web 构建产物已提交在 `www/app/`，运行镜像不需要 Node.js。
 
-使用以下指令启动游戏：
+> 推荐使用[mudlet](https://github.com/Mudlet/Mudlet)客户端连接传统 Telnet，推荐使用UTF-8编码进行游戏。
 
-    driver config.ini
+## 原项目说明
 
-> 推荐使用`run.sh`或`run.bat`脚本启动项目。
-
-如果是开发学习，使用以下方式之一开启调试模式：
-
-    driver config.ini -fdebug
-    driver config.ini -d
-
- * 5566 端口为GBK编码
- * 6666 端口为UTF-8编码
- * 8888 端口为WEBSOCKET访问
-
-> 推荐使用[mudlet](https://github.com/Mudlet/Mudlet)客户端连接游戏，推荐使用UTF-8编码进行游戏。
+本游戏为侠客行类文字MUD游戏，底层为炎黄2003，LIB代码有大量借鉴国内优秀的LIB，开源在此方便对MUD游戏感兴趣的玩家。
 
 注册ID为 `mudren` 的帐号为游戏管理员(admin)。
 
