@@ -30,6 +30,37 @@ const typeLabels: Record<RoomEntity['type'], string> = {
 
 const actionLabel = (action: string): string => actionLabels[action] || action;
 
+interface EntityIdentityProps {
+    detail?: boolean;
+    entity: RoomEntity;
+}
+
+const EntityIdentity = ({ detail = false, entity }: EntityIdentityProps) => {
+    const isPerson = entity.type === 'npc' || entity.type === 'player';
+
+    return (
+        <>
+            <span className="entity-primary-row">
+                {detail ? (
+                    <strong className="entity-detail-name">{entity.name}</strong>
+                ) : (
+                    <span className="entity-name">{entity.name}</span>
+                )}
+                {isPerson ? (
+                    <span className={`entity-type-chip ${entity.type}`}>{typeLabels[entity.type]}</span>
+                ) : (
+                    <span className="entity-meta">{typeLabels[entity.type]}</span>
+                )}
+            </span>
+            {entity.title && (
+                <span className={isPerson ? `entity-title${detail ? ' entity-detail-title' : ''}` : 'entity-meta'}>
+                    {entity.title}
+                </span>
+            )}
+        </>
+    );
+};
+
 export const RoomEntities = ({ connected = true, entities, inventory, disabled, onAction, onGive }: RoomEntitiesProps) => {
     const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
     const [message, setMessage] = useState('');
@@ -141,13 +172,8 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
                             type="button"
                         >
                             <span className="entity-card-copy">
-                                <span className="entity-name">{entity.name}</span>
-                                <span className="entity-meta">
-                                    <span>{typeLabels[entity.type]}</span>
-                                    {entity.title && <span>{entity.title}</span>}
-                                </span>
+                                <EntityIdentity entity={entity} />
                             </span>
-                            <span className="entity-action-count">{entity.actions.length} 动作</span>
                         </button>
                     ))}
                 </div>
@@ -155,9 +181,8 @@ export const RoomEntities = ({ connected = true, entities, inventory, disabled, 
             {selectedEntity && (
                 <div className="entity-detail entity-sheet" aria-label={`${selectedEntity.name} 可用动作`}>
                     <div className="entity-detail-heading">
-                        <div>
-                            <p className="eyebrow">{typeLabels[selectedEntity.type]}</p>
-                            <strong>{selectedEntity.name}</strong>
+                        <div className="entity-detail-copy">
+                            <EntityIdentity detail entity={selectedEntity} />
                         </div>
                         <button className="entity-close" onClick={() => setSelectedEntityId(null)} type="button">
                             关闭

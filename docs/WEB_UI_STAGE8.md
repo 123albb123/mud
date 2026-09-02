@@ -116,3 +116,20 @@ Stage 8 不增加游戏玩法，也不从 Terminal 文本推导 HP、房间、NP
 本阶段不做完整 VT100 emulator、服务器历史日志、跨 session Terminal 历史、IndexedDB 日志、linkify、宏/alias/trigger/自动战斗，也不改 LPC 游戏逻辑、GMCP schema 或 `mudcore`。中文 IME 的自动化验证使用 composition event；除非在真机上验证，不宣称已经验证真实 iPhone 系统输入法。
 
 Stage 8 完成后停止，不进入 Stage 9。
+
+## Stage 8.0.2 实体 UI 收尾（2026-09-02）
+
+本阶段只收尾“附近人物”实体卡片的身份辨识，不改变 Terminal、PWA、战斗协议或游戏玩法。
+
+1. **保留 NPC / 玩家标签**：附近人物可能同时包含服务器 NPC 与真实玩家；真实第二角色同房间时显示为 `验收 [玩家]`，因此两类身份都必须保留。
+2. **删除动作数量**：动作数量不能帮助玩家做决定，选中实体后已直接显示服务器确认的动作按钮；因此彻底移除 `X 动作` 文本，但保留 `entity.actions` 和所有动作渲染。
+3. **最终姓名层级**：卡片和详情姓名均为 `19px`、`font-weight: 600`、`line-height: 1.25`，使用既有 `var(--font-title)`；选中卡片使用 `var(--gold-bright)`。
+4. **NPC chip**：独立 `.entity-type-chip.npc`，10px/600，`2px 6px` 内边距、999px 圆角、暖金边框与低透明棕金底色，不与姓名拼接。
+5. **玩家 chip**：独立 `.entity-type-chip.player`，10px/600，同样紧凑圆角结构，使用 `var(--teal)`、teal 边框和低透明 teal 底色，与 NPC 明显区分。
+6. **title 层级**：`entity.title` 显示在姓名下方，12px、弱化色、单行 ellipsis；没有 title 时不渲染空占位。详情区域同步使用同一层级。
+7. **英文后缀排查结果**：本轮真实 8888 检查发现 Terminal 原版会显示正式命令别名，例如 `欧阳克(ouyang ke)`、`剑客(jian ke)`、`江湖豪客(jianghu haoke)`、`戚长发(qi changfa)`、`小混混(xiao hunhun)`、`流氓头(liumang tou)`、`流氓(liumang)`、`周不通(zhou butong)`、`北丑(bei chou)`。同一时段 `Room.Entities` payload 的 `name` 分别为纯中文 `欧阳克`、`剑客`、`江湖豪客`、`戚长发`、`小混混`、`流氓头`、`流氓`、`周不通`、`北丑`，Web UI 也只显示纯中文名；本轮未复现除 NPC 标签以外的英文后缀。没有使用正则裁剪。
+8. **LPC / GMCP**：未修改 LPC，未修改 `Room.Entities 1` schema，未新增字段，也未修改 `entity_id` 生成、定位或动作请求逻辑；`entity_id` 和 command id 均不显示在普通 UI。
+9. **Runtime NPC 列表**：真实走查了牛头、地藏王、周不通、北丑、店小二、戚长发、剑客、江湖豪客、小混混、流氓头、流氓、欧阳克，以及动态出现的秦旨；带称号和无称号卡片均已检查。
+10. **三视口结果**：`390×844` 实体 sheet 可纵向滚动，姓名/标签/称号/动作按钮无横向溢出；`844×390` 恢复可滚动的实体栏，姓名和 chip 保持完整且仍可到达，内容区 `scrollWidth=844`；`1440×900` 右侧栏宽度 320px，19px 姓名与 chip 排布自然，页面 `scrollWidth=1440`。三种尺寸均未发现横向溢出。
+11. **测试与构建**：`npm test -- --run` 通过 24 个测试文件、116 个测试；`npm run build` 通过 TypeScript 检查与 Vite 生产构建，`www/app` 已更新 hashed JS/CSS。新增 `RoomEntities` 覆盖 NPC/玩家 chip 区分、title/无 title、无 `X 动作`、动作按钮保留、opaque `entity_id` 和长姓名 DOM。
+12. **Git**：本阶段变更使用提交主题 `fix: polish room entity identity display` 整理，最终 commit SHA 以本次 master 提交记录和验收汇报为准；测试账号、存档、日志和临时验收资源不纳入提交。

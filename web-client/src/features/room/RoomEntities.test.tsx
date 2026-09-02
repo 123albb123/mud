@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RoomEntities } from './RoomEntities';
 
@@ -8,7 +8,20 @@ const entities = [
         type: 'npc' as const,
         name: '北丑',
         title: '武林泰斗',
-        actions: [{ id: 'look' }, { id: 'ask' }, { id: 'talk' }, { id: 'give' }],
+        actions: [
+            { id: 'look' },
+            { id: 'ask' },
+            { id: 'talk' },
+            { id: 'give' },
+            { id: 'fight' },
+            { id: 'kill' },
+        ],
+    },
+    {
+        entity_id: 'e-test-player-0001',
+        type: 'player' as const,
+        name: '验收',
+        actions: [{ id: 'look' }, { id: 'talk' }],
     },
     {
         entity_id: 'e-test-0002',
@@ -37,6 +50,56 @@ const inventory = [{
 }];
 
 describe('RoomEntities', () => {
+    it('shows distinct person chips, titles, and no action count or internal IDs', () => {
+        const { container } = render(
+            <RoomEntities disabled={false} entities={entities} inventory={inventory} onAction={() => undefined} onGive={() => undefined} />,
+        );
+
+        const npcCard = screen.getByRole('button', { name: /北丑/ });
+        const playerCard = screen.getByRole('button', { name: /验收/ });
+        expect(within(npcCard).getByText('NPC')).toHaveClass('entity-type-chip', 'npc');
+        expect(within(playerCard).getByText('玩家')).toHaveClass('entity-type-chip', 'player');
+        expect(within(npcCard).getByText('武林泰斗')).toHaveClass('entity-title');
+        expect(playerCard.querySelector('.entity-title')).not.toBeInTheDocument();
+        expect(container.querySelector('.entity-action-count')).not.toBeInTheDocument();
+        expect(screen.queryByText(/^\d+ 动作$/)).not.toBeInTheDocument();
+        expect(screen.queryByText('e-test-player-0001')).not.toBeInTheDocument();
+    });
+
+    it('keeps all selected entity actions available without the count label', () => {
+        render(<RoomEntities disabled={false} entities={entities} inventory={inventory} onAction={() => undefined} onGive={() => undefined} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /北丑/ }));
+        expect(screen.getByRole('button', { name: '查看' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '询问' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '交谈' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '给予' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '切磋' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '攻击' })).toBeInTheDocument();
+    });
+
+    it('keeps a long name and its chip in the identity row', () => {
+        const longName = '白驼山西域武学传人欧阳克';
+        render(
+            <RoomEntities
+                disabled={false}
+                entities={[{
+                    entity_id: 'e-test-long-name-0001',
+                    type: 'npc',
+                    name: longName,
+                    actions: [{ id: 'look' }],
+                }]}
+                inventory={[]}
+                onAction={() => undefined}
+                onGive={() => undefined}
+            />,
+        );
+
+        const card = screen.getByRole('button', { name: new RegExp(longName) });
+        expect(within(card).getByText(longName)).toHaveClass('entity-name');
+        expect(within(card).getByText('NPC')).toHaveClass('entity-type-chip', 'npc');
+    });
+
     it('groups nearby and ground entities while preserving opaque IDs', () => {
         const onAction = vi.fn();
         render(<RoomEntities disabled={false} entities={entities} inventory={inventory} onAction={onAction} onGive={() => undefined} />);

@@ -1233,9 +1233,9 @@ select:focus-visible {
 
 .entity-card {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 7px;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 8px;
     width: 100%;
     min-height: 44px;
     padding: 7px 8px;
@@ -1254,24 +1254,37 @@ select:focus-visible {
 
 .entity-card-copy {
     display: grid;
+    flex: 1 1 auto;
     min-width: 0;
     gap: 3px;
 }
 
+.entity-primary-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 6px;
+}
+
 .entity-name {
     overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 0;
     color: var(--gold);
     font-family: var(--font-title);
-    font-size: 16px;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.25;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.entity-meta,
-.entity-action-count {
+.entity-meta {
     color: #887c6d;
     font-family: var(--font-ui);
     font-size: 9px;
+    line-height: 1.35;
+    white-space: nowrap;
 }
 
 .entity-meta {
@@ -1279,9 +1292,50 @@ select:focus-visible {
     gap: 6px;
 }
 
-.entity-action-count {
-    color: var(--teal);
+.entity-type-chip {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 2px 6px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
     white-space: nowrap;
+}
+
+.entity-type-chip.npc {
+    border-color: rgba(170, 132, 70, 0.62);
+    color: var(--gold);
+    background: rgba(101, 72, 31, 0.34);
+}
+
+.entity-type-chip.player {
+    border-color: rgba(71, 171, 174, 0.62);
+    color: var(--teal);
+    background: rgba(20, 79, 80, 0.34);
+}
+
+.entity-title {
+    display: block;
+    overflow: hidden;
+    min-width: 0;
+    color: #9d8a70;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.entity-card.selected .entity-name {
+    color: var(--gold-bright);
+}
+
+.entity-card.selected .entity-type-chip {
+    border-color: currentColor;
 }
 
 .empty-entity-state,
@@ -1308,13 +1362,27 @@ select:focus-visible {
     gap: 9px;
 }
 
-.entity-detail-heading strong {
+.entity-detail-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.entity-detail-name {
     display: block;
-    margin-top: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
     color: var(--gold-bright);
     font-family: var(--font-title);
-    font-size: 17px;
-    font-weight: 500;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.entity-detail-title {
+    margin-top: 2px;
 }
 
 .entity-close,
@@ -3805,18 +3873,20 @@ kbd,
 
     .game-main {
         display: block;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
         padding-top: 6px;
         padding-bottom: 6px;
     }
 
     .center-stage {
-        height: 100%;
+        height: auto;
         min-height: 0;
     }
 
     .scene-panel {
-        height: 100%;
+        height: auto;
+        min-height: 0;
         padding: 8px 10px;
     }
 
@@ -3837,7 +3907,7 @@ kbd,
     }
 
     .terminal-wrap {
-        min-height: 0;
+        min-height: min(42vh, 180px);
         margin-top: 5px;
     }
 
@@ -3851,7 +3921,6 @@ kbd,
         margin-top: 5px;
     }
 
-    .right-rail,
     .mobile-combat {
         display: none;
     }
