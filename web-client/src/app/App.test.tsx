@@ -36,6 +36,7 @@ const makeClient = (overrides: Partial<ClientState> = {}): ClientState => ({
     debugEntries: [],
     connect: vi.fn(),
     disconnect: vi.fn(),
+    setTerminalSize: vi.fn(),
     sendCommand: vi.fn(),
     sendRoomMove: vi.fn(),
     sendItemAction: vi.fn(),
@@ -282,5 +283,17 @@ describe('App', () => {
         expect(screen.queryByRole('button', { name: '检查更新' })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: '开启通知' })).not.toBeInTheDocument();
         expect(screen.getAllByRole('button', { name: '连接' }).length).toBeGreaterThan(0);
+    });
+
+    it('keeps an unfinished command draft when switching between views', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient({ connectionState: 'connected' }));
+        render(<App />);
+
+        const input = screen.getByLabelText('MUD 命令');
+        fireEvent.change(input, { target: { value: 'examine xxx' } });
+        fireEvent.click(screen.getByRole('button', { name: /^地图$/ }));
+        fireEvent.click(document.querySelector('.top-nav button') as HTMLElement);
+
+        expect(screen.getByLabelText('MUD 命令')).toHaveValue('examine xxx');
     });
 });

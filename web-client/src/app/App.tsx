@@ -9,7 +9,7 @@ import { RoomEntities } from '../features/room/RoomEntities';
 import { RoomPanel } from '../features/room/RoomPanel';
 import { SkillsPanel } from '../features/skills/SkillsPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
-import { Terminal } from '../features/terminal/Terminal';
+import { Terminal, type TerminalFontSize } from '../features/terminal/Terminal';
 import type { CharacterStatus, CharacterVitals } from '../protocol/gmcp/gmcp';
 import {
     clientVersion,
@@ -33,6 +33,28 @@ const stateLabels = {
     closed: '未连接',
     error: '连接错误',
 } as const;
+
+const TERMINAL_FONT_SIZE_STORAGE_KEY = 'yh-terminal-font-size';
+
+const readTerminalFontSize = (): TerminalFontSize => {
+    if (typeof window === 'undefined') {
+        return 'standard';
+    }
+    try {
+        const stored = window.localStorage.getItem(TERMINAL_FONT_SIZE_STORAGE_KEY);
+        return stored === 'small' || stored === 'large' ? stored : 'standard';
+    } catch {
+        return 'standard';
+    }
+};
+
+const persistTerminalFontSize = (size: TerminalFontSize): void => {
+    try {
+        window.localStorage.setItem(TERMINAL_FONT_SIZE_STORAGE_KEY, size);
+    } catch {
+        // Preferences are optional; private browsing may deny localStorage.
+    }
+};
 
 const iconPaths: Record<IconName, string> = {
     home: 'M3 10.6 12 3l9 7.6M5.5 9.2V21h13V9.2M9 21v-6.4h6V21',
@@ -125,9 +147,11 @@ type SettingsViewProps = {
     debugEntries: Array<{ id: number; time: string; message: string }>;
     onConnect: () => void;
     onToggleDebug: () => void;
+    onTerminalFontSizeChange: (size: TerminalFontSize) => void;
     onUrlChange: (value: string) => void;
     pwa: ReturnType<typeof usePwa>;
     showDebug: boolean;
+    terminalFontSize: TerminalFontSize;
     urlError: string;
     url: string;
 };
@@ -138,9 +162,11 @@ const SettingsView = ({
     debugEntries,
     onConnect,
     onToggleDebug,
+    onTerminalFontSizeChange,
     onUrlChange,
     pwa,
     showDebug,
+    terminalFontSize,
     urlError,
     url,
 }: SettingsViewProps) => {
@@ -179,6 +205,12 @@ const SettingsView = ({
                 {pwa.updateAvailable && <div className="settings-update-row"><strong>客户端新版本已准备好</strong><button className="settings-action primary" disabled={pwa.isUpdating} onClick={pwa.applyUpdate} type="button">{pwa.isUpdating ? '更新中…' : '更新'}</button></div>}
             </section>
 
+            <section className="settings-section" aria-labelledby="settings-terminal-title">
+                <div className="settings-section-heading"><div><h2 id="settings-terminal-title">文字终端</h2><p>保留服务器原版文字，只调整终端的阅读字号。</p></div><Icon name="mountain" size={24} /></div>
+                <label className="settings-select-row"><span>终端字号</span><select aria-label="终端字号" onChange={(event) => onTerminalFontSizeChange(event.target.value as TerminalFontSize)} value={terminalFontSize}><option value="small">小 · 14px</option><option value="standard">标准 · 16px</option><option value="large">大 · 18px</option></select></label>
+                <p className="settings-hint">只保存这项显示偏好，不保存命令、密码或终端历史。</p>
+            </section>
+
             <section className="settings-section" aria-labelledby="settings-notification-title">
                 <div className="settings-section-heading"><div><h2 id="settings-notification-title">通知</h2><p>只在页面未聚焦时提醒新的私聊消息。</p></div><Icon name="message" size={24} /></div>
                 <div className="settings-row"><div><strong>通知状态</strong><small>{notificationStatus}</small></div>{pwa.notificationsEnabled ? <button className="settings-action" onClick={pwa.disableNotifications} type="button">关闭通知</button> : pwa.notificationAvailable && pwa.notificationPermission !== 'denied' && pwa.notificationPermission !== 'unsupported' && <button className="settings-action primary" onClick={() => { void pwa.enableNotifications(); }} type="button">开启通知</button>}</div>
@@ -212,6 +244,9 @@ export const App = () => {
     const [inventoryTab, setInventoryTab] = useState<InventoryTab>('inventory');
     const [showDebug, setShowDebug] = useState(false);
     const [hideUpdatePrompt, setHideUpdatePrompt] = useState(false);
+    const [terminalFontSize, setTerminalFontSize] = useState<TerminalFontSize>(readTerminalFontSize);
+    const [commandDraft, setCommandDraft] = useState('');
+    const [commandHistory, setCommandHistory] = useState<string[]>([]);
     const autoConnectStarted = useRef(false);
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
@@ -249,7 +284,13 @@ export const App = () => {
         if (urlError) {
             return;
         }
+        setCommandDraft('');
         client.connect(url);
+    };
+
+    const handleTerminalFontSizeChange = (size: TerminalFontSize) => {
+        setTerminalFontSize(size);
+        persistTerminalFontSize(size);
     };
 
     let page: ReactNode;
@@ -266,7 +307,7 @@ export const App = () => {
     } else if (activeView === 'quests') {
         page = <main className="page-main"><div className="page-surface"><PageHeading description="查看任务状态与进度。" icon="quest" title="任务" action={<span className="count-label">{client.quests?.quests.length ?? 0} 项当前</span>} /><QuestPanel connected={connected} embedded snapshot={client.quests} /></div></main>;
     } else if (activeView === 'settings') {
-        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={handleConnect} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} urlError={urlError} url={url} />;
+        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={handleConnect} onTerminalFontSizeChange={handleTerminalFontSizeChange} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} terminalFontSize={terminalFontSize} urlError={urlError} url={url} />;
     } else {
         page = <main className="page-main"><div className="page-surface chat-page-surface"><PageHeading description="查看消息并参与交流。" icon="message" title="消息" action={<span className="count-label">{client.chatMessages.length} 条消息</span>} /><ChatPanel capabilities={client.chatCapabilities} connected={connected} embedded messages={client.chatMessages} onSend={client.sendChat} targets={client.chatTargets} /></div></main>;
     }
@@ -275,7 +316,7 @@ export const App = () => {
     const roomArea = client.room?.area || (connected ? '当前区域未知' : '连接江湖后显示房间');
 
     return (
-        <div className={'game-shell ' + (activeView === 'jianghu' ? 'is-game-view' : 'is-page-view')}>
+        <div className={'game-shell terminal-size-' + terminalFontSize + ' ' + (activeView === 'jianghu' ? 'is-game-view' : 'is-page-view')}>
             <header className="game-header">
                 <button className="brand" onClick={() => navigate('jianghu')} type="button"><span className="brand-mark">炎黄</span><span className="brand-seal">江湖</span></button>
                 <nav className="top-nav" aria-label="全局导航"><button className={activeView === 'jianghu' ? 'active' : ''} onClick={() => navigate('jianghu')} type="button"><Icon name="home" size={17} />江湖</button><button className={activeView === 'map' ? 'active' : ''} onClick={() => navigate('map')} type="button"><Icon name="map" size={17} />地图</button><button className={activeView === 'help' ? 'active' : ''} onClick={() => navigate('help')} type="button"><Icon name="help" size={17} />帮助</button></nav>
@@ -287,7 +328,7 @@ export const App = () => {
 
             {activeView === 'jianghu' ? <main className="game-main">
                 <aside className="left-rail"><PlayerCard connected={connected} status={client.status} vitals={client.vitals} /><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /><div className="rail-tip"><Icon name="spark" size={17} /><span>所有状态会随服务器快照实时更新</span></div></aside>
-                <section className="center-stage"><div className="scene-panel surface-card"><div className="scene-topline"><span><Icon name="mountain" size={16} />{roomArea}</span><span className="scene-status"><i />{connected ? '实时同步' : '等待连接'}</span></div><div className="scene-title-row"><h1>{roomTitle}</h1></div>{!client.room && <div className="scene-empty-state"><Icon name="mountain" size={20} /><span>{connected ? '当前没有房间信息' : '连接江湖后显示房间、出口与周围人物'}</span></div>}<Terminal connected={connected} segments={client.segments} /><CommandBar connected={connected} onSend={client.sendCommand} serverSensitive={client.serverSensitive} /></div></section>
+                <section className="center-stage"><div className="scene-panel surface-card"><div className="scene-topline"><span><Icon name="mountain" size={16} />{roomArea}</span><span className="scene-status"><i />{connected ? '实时同步' : '等待连接'}</span></div><div className="scene-title-row"><h1>{roomTitle}</h1></div>{!client.room && <div className="scene-empty-state"><Icon name="mountain" size={20} /><span>{connected ? '当前没有房间信息' : '连接江湖后显示房间、出口与周围人物'}</span></div>}<Terminal connected={connected} onTerminalSize={client.setTerminalSize} segments={client.segments} terminalFontSize={terminalFontSize} /><CommandBar connected={connected} history={commandHistory} onHistoryChange={setCommandHistory} onSend={client.sendCommand} onValueChange={setCommandDraft} serverSensitive={client.serverSensitive} value={commandDraft} /></div></section>
                 <aside className="right-rail"><RoomPanel connected={connected} disabled={!connected} onMove={client.sendRoomMove} room={client.room} roomMap={client.roomMap} /><RoomEntities connected={connected} disabled={!connected} entities={client.entities} inventory={client.inventory} onAction={client.sendEntityAction} onGive={client.sendEntityGive} /></aside>
                 <section className="mobile-combat"><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /></section>
             </main> : page}

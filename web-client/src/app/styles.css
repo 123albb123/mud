@@ -3682,6 +3682,187 @@ kbd,
     }
 }
 
+/* Stage 8: the terminal is an ANSI-aware, selectable text surface. */
+.game-shell {
+    --terminal-font-size: 16px;
+    --terminal-line-height: 1.62;
+}
+
+.game-shell.terminal-size-small {
+    --terminal-font-size: 14px;
+    --terminal-line-height: 1.65;
+}
+
+.game-shell.terminal-size-large {
+    --terminal-font-size: 18px;
+    --terminal-line-height: 1.58;
+}
+
+.terminal {
+    font-family: "SFMono-Regular", "Consolas", "JetBrains Mono", "Microsoft YaHei", monospace;
+    font-size: var(--terminal-font-size);
+    line-height: var(--terminal-line-height);
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scroll-padding-block: 12px;
+}
+
+.terminal * {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.terminal .ansi-dim {
+    opacity: 0.72;
+}
+
+.terminal .ansi-italic {
+    font-style: italic;
+}
+
+.terminal .ansi-underline {
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+
+.terminal .ansi-inverse {
+    color: #0d1010;
+    background-color: #d3c8b8;
+}
+
+.terminal .ansi-bg-black { background-color: #000000; }
+.terminal .ansi-bg-red { background-color: #800000; }
+.terminal .ansi-bg-green { background-color: #008000; }
+.terminal .ansi-bg-yellow { background-color: #808000; }
+.terminal .ansi-bg-blue { background-color: #000080; }
+.terminal .ansi-bg-magenta { background-color: #800080; }
+.terminal .ansi-bg-cyan { background-color: #008080; }
+.terminal .ansi-bg-white { background-color: #c0c0c0; }
+.terminal .ansi-bg-bright-black { background-color: #808080; }
+.terminal .ansi-bg-bright-red { background-color: #ff0000; }
+.terminal .ansi-bg-bright-green { background-color: #00ff00; }
+.terminal .ansi-bg-bright-yellow { background-color: #ffff00; }
+.terminal .ansi-bg-bright-blue { background-color: #0000ff; }
+.terminal .ansi-bg-bright-magenta { background-color: #ff00ff; }
+.terminal .ansi-bg-bright-cyan { background-color: #00ffff; }
+.terminal .ansi-bg-bright-white { background-color: #ffffff; }
+
+.to-bottom {
+    z-index: 2;
+    max-width: calc(100% - 24px);
+    white-space: nowrap;
+}
+
+.command-bar input {
+    font-size: 16px;
+}
+
+@media (max-width: 680px) {
+    .game-main {
+        min-height: 0;
+        overscroll-behavior-y: contain;
+    }
+
+    /* Keep the text terminal and its input above the dock on a phone. */
+    .left-rail {
+        display: none;
+    }
+
+    .scene-panel {
+        min-height: 0;
+    }
+
+    .terminal-wrap {
+        min-height: min(42vh, 360px);
+    }
+
+    .terminal {
+        font-size: var(--terminal-font-size);
+        line-height: var(--terminal-line-height);
+        padding-bottom: 18px;
+    }
+
+    .command-bar input,
+    .privacy-toggle,
+    .send-command {
+        min-height: 48px;
+    }
+
+    .command-bar input {
+        font-size: 16px;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    .connection-strip {
+        min-height: 40px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    .game-main {
+        display: block;
+        overflow: hidden;
+        padding-top: 6px;
+        padding-bottom: 6px;
+    }
+
+    .center-stage {
+        height: 100%;
+        min-height: 0;
+    }
+
+    .scene-panel {
+        height: 100%;
+        padding: 8px 10px;
+    }
+
+    .scene-topline {
+        padding-bottom: 5px;
+    }
+
+    .scene-title-row {
+        margin-top: 5px;
+    }
+
+    .scene-title-row h1 {
+        font-size: 21px;
+    }
+
+    .scene-empty-state {
+        display: none;
+    }
+
+    .terminal-wrap {
+        min-height: 0;
+        margin-top: 5px;
+    }
+
+    .terminal {
+        padding-top: 4px;
+        padding-bottom: 6px;
+        line-height: 1.35;
+    }
+
+    .command-bar {
+        margin-top: 5px;
+    }
+
+    .right-rail,
+    .mobile-combat {
+        display: none;
+    }
+
+    .command-bar input,
+    .privacy-toggle,
+    .send-command {
+        min-height: 44px;
+    }
+}
+
 /* Stage 7: the shell remains usable on browsers without 100dvh, while modern
  * mobile browsers get the visual viewport and all system safe-area insets. */
 .game-shell {

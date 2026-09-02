@@ -69,4 +69,22 @@ describe('TelnetParser', () => {
         const { parser } = createParser();
         expect([...parser.encodeText(`A${String.fromCharCode(255)}B`)]).toEqual([65, 195, 191, 66]);
     });
+
+    it('sends measured NAWS dimensions after negotiation and on resize', () => {
+        const { parser, sent } = createParser();
+        parser.setWindowSize(1440, 900);
+        parser.push(new Uint8Array([Telnet.IAC, Telnet.DO, Telnet.NAWS]));
+        expect([...sent[1]]).toEqual([
+            Telnet.IAC, Telnet.SB, Telnet.NAWS,
+            5, 160, 3, 132,
+            Telnet.IAC, Telnet.SE,
+        ]);
+
+        parser.setWindowSize(86, 15);
+        expect([...sent[2]]).toEqual([
+            Telnet.IAC, Telnet.SB, Telnet.NAWS,
+            0, 86, 0, 15,
+            Telnet.IAC, Telnet.SE,
+        ]);
+    });
 });

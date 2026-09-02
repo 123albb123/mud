@@ -47,6 +47,11 @@ import {
 import { TelnetParser } from '../protocol/telnet/TelnetParser';
 import { MudConnection, type ConnectionState } from '../protocol/websocket/MudConnection';
 import {
+    appendAnsiSegments,
+    TERMINAL_HISTORY_LINES,
+} from '../features/terminal/terminalHistory';
+import type { TerminalSize } from '../features/terminal/terminalLayout';
+import {
     applyRoomInfo,
     applyRoomMapSnapshot,
     applyRoomMapTransition,
@@ -99,6 +104,9 @@ export const useMudClient = () => {
     const parserRef = useRef<TelnetParser | null>(null);
     const decoderRef = useRef(new TextDecoder('utf-8'));
     const ansiRef = useRef(new AnsiParser());
+    const terminalPendingSegmentsRef = useRef<AnsiSegment[]>([]);
+    const terminalFlushHandleRef = useRef<number | null>(null);
+    const terminalSizeRef = useRef<TerminalSize>({ cols: 80, rows: 24 });
     const debugSequence = useRef(0);
     const inventoryRevisionRef = useRef(-1);
     const equipmentRevisionRef = useRef(-1);
@@ -135,14 +143,100 @@ export const useMudClient = () => {
         }]);
     }, []);
 
+    const flushTerminalSegments = useCallback(() => {
+        terminalFlushHandleRef.current = null;
+        const pending = terminalPendingSegmentsRef.current;
+        terminalPendingSegmentsRef.current = [];
+        if (pending.length === 0) {
+            return;
+        }
+        setSegments((current) => appendAnsiSegments(current, pending, TERMINAL_HISTORY_LINES));
+    }, []);
+
+    const scheduleTerminalFlush = useCallback(() => {
+        if (terminalFlushHandleRef.current !== null || typeof window === 'undefined') {
+            return;
+        }
+        if (typeof window.requestAnimationFrame === 'function') {
+            terminalFlushHandleRef.current = window.requestAnimationFrame(flushTerminalSegments);
+        } else {
+            terminalFlushHandleRef.current = window.setTimeout(flushTerminalSegments, 0);
+        }
+    }, [flushTerminalSegments]);
+
+    const cancelTerminalFlush = useCallback(() => {
+        const handle = terminalFlushHandleRef.current;
+        if (handle === null || typeof window === 'undefined') {
+            return;
+        }
+        window.cancelAnimationFrame?.(handle);
+        window.clearTimeout(handle);
+        terminalFlushHandleRef.current = null;
+    }, []);
+
     const appendText = useCallback((text: string) => {
         if (!text) {
             return;
         }
         const next = ansiRef.current.push(text);
         if (next.length > 0) {
-            setSegments((current) => [...current, ...next].slice(-5000));
+            terminalPendingSegmentsRef.current.push(...next);
+            scheduleTerminalFlush();
         }
+    }, [scheduleTerminalFlush]);
+
+    const resetSnapshotRevisions = useCallback(() => {
+        inventoryRevisionRef.current = -1;
+        equipmentRevisionRef.current = -1;
+        entitiesRevisionRef.current = -1;
+        vitalsRevisionRef.current = -1;
+        statusRevisionRef.current = -1;
+        combatRevisionRef.current = -1;
+        skillsRevisionRef.current = -1;
+        combatActionsRevisionRef.current = -1;
+        roomMapRevisionRef.current = -1;
+        roomMapSequenceRef.current = -1;
+        questsRevisionRef.current = -1;
+        chatCapabilitiesRevisionRef.current = -1;
+        chatTargetsRevisionRef.current = -1;
+        chatMessageIdsRef.current.clear();
+        gmcpStateRequestedRef.current = false;
+    }, []);
+
+    const resetProtocol = useCallback(() => {
+        parserRef.current?.reset();
+        decoderRef.current = new TextDecoder('utf-8');
+        ansiRef.current.reset();
+        resetSnapshotRevisions();
+    }, [resetSnapshotRevisions]);
+
+    const clearSessionState = useCallback(() => {
+        cancelTerminalFlush();
+        terminalPendingSegmentsRef.current = [];
+        setSegments([]);
+        setVitals(null);
+        setStatus(null);
+        setCombat(null);
+        setSkills([]);
+        setCombatActions([]);
+        setRoom(null);
+        setRoomMap(null);
+        setExploredMap(createEmptyExploredMapGraph());
+        setEntities([]);
+        setInventory([]);
+        setEquipment([]);
+        setEquipmentSlotOrder([]);
+        setQuests(null);
+        setChatCapabilities(null);
+        setChatTargets([]);
+        setChatMessages([]);
+        setServerSensitive(false);
+        resetProtocol();
+    }, [cancelTerminalFlush, resetProtocol]);
+
+    const setTerminalSize = useCallback((size: TerminalSize) => {
+        terminalSizeRef.current = size;
+        parserRef.current?.setWindowSize(size.cols, size.rows);
     }, []);
 
     const handleGMCP = useCallback((bytes: Uint8Array) => {
@@ -280,65 +374,10 @@ export const useMudClient = () => {
                 setConnectionDetail(detail);
                 appendDebug(`WebSocket STATE ${state}${detail ? `: ${detail}` : ''}`);
                 if (state === 'connecting' || state === 'reconnecting') {
-                    parser.reset();
-                    decoderRef.current = new TextDecoder('utf-8');
-                    ansiRef.current.reset();
-                    setSegments([]);
-                    inventoryRevisionRef.current = -1;
-                    equipmentRevisionRef.current = -1;
-                    entitiesRevisionRef.current = -1;
-                    vitalsRevisionRef.current = -1;
-                    statusRevisionRef.current = -1;
-                    combatRevisionRef.current = -1;
-                    skillsRevisionRef.current = -1;
-                    combatActionsRevisionRef.current = -1;
-                    roomMapRevisionRef.current = -1;
-                    roomMapSequenceRef.current = -1;
-                    questsRevisionRef.current = -1;
-                    chatCapabilitiesRevisionRef.current = -1;
-                    chatTargetsRevisionRef.current = -1;
-                    chatMessageIdsRef.current.clear();
-                    gmcpStateRequestedRef.current = false;
-                    setVitals(null);
-                    setStatus(null);
-                    setCombat(null);
-                    setSkills([]);
-                    setCombatActions([]);
-                    setRoom(null);
-                    setRoomMap(null);
-                    setExploredMap(createEmptyExploredMapGraph());
-                    setEntities([]);
-                    setInventory([]);
-                    setEquipment([]);
-                    setEquipmentSlotOrder([]);
-                    setQuests(null);
-                    setChatCapabilities(null);
-                    setChatTargets([]);
-                    setChatMessages([]);
-                } else if (state === 'closed') {
-                    setSegments([]);
-                    setVitals(null);
-                    setStatus(null);
-                    setCombat(null);
-                    setSkills([]);
-                    setCombatActions([]);
-                    setRoom(null);
-                    setRoomMap(null);
-                    setExploredMap(createEmptyExploredMapGraph());
-                    setEntities([]);
-                    setInventory([]);
-                    setEquipment([]);
-                    setEquipmentSlotOrder([]);
-                    roomMapRevisionRef.current = -1;
-                    roomMapSequenceRef.current = -1;
-                    questsRevisionRef.current = -1;
-                    chatCapabilitiesRevisionRef.current = -1;
-                    chatTargetsRevisionRef.current = -1;
-                    chatMessageIdsRef.current.clear();
-                    setQuests(null);
-                    setChatCapabilities(null);
-                    setChatTargets([]);
-                    setChatMessages([]);
+                    // A new transport session needs a fresh Telnet/UTF-8 parser,
+                    // but a short reconnect must not erase the player's screen
+                    // or the last structured snapshots while the socket recovers.
+                    resetProtocol();
                 }
             },
             onData: (bytes) => parser.push(bytes),
@@ -349,59 +388,23 @@ export const useMudClient = () => {
         });
         connectionRef.current = connection;
 
-        const updateWindowSize = () => {
-            parser.setWindowSize(
-                Math.max(40, Math.floor(window.innerWidth / 9)),
-                Math.max(12, Math.floor(window.innerHeight / 18)),
-            );
-        };
-        updateWindowSize();
-        window.addEventListener('resize', updateWindowSize);
+        parser.setWindowSize(terminalSizeRef.current.cols, terminalSizeRef.current.rows);
 
         return () => {
-            window.removeEventListener('resize', updateWindowSize);
+            cancelTerminalFlush();
+            terminalPendingSegmentsRef.current = [];
             connection.disconnect();
             connectionRef.current = null;
             parserRef.current = null;
         };
-    }, [appendDebug, appendText, handleGMCP, requestGMCPState]);
+    }, [appendDebug, appendText, cancelTerminalFlush, handleGMCP, requestGMCPState, resetProtocol]);
 
     const connect = useCallback((url: string) => {
-        setSegments([]);
-        setVitals(null);
-        setStatus(null);
-        setCombat(null);
-        setSkills([]);
-        setCombatActions([]);
-        setRoom(null);
-        setRoomMap(null);
-        setExploredMap(createEmptyExploredMapGraph());
-        setEntities([]);
-        setInventory([]);
-        setEquipment([]);
-        setEquipmentSlotOrder([]);
-        setQuests(null);
-        setChatCapabilities(null);
-        setChatTargets([]);
-        setChatMessages([]);
-        inventoryRevisionRef.current = -1;
-        equipmentRevisionRef.current = -1;
-        entitiesRevisionRef.current = -1;
-        vitalsRevisionRef.current = -1;
-        statusRevisionRef.current = -1;
-        combatRevisionRef.current = -1;
-        skillsRevisionRef.current = -1;
-        combatActionsRevisionRef.current = -1;
-        roomMapRevisionRef.current = -1;
-        roomMapSequenceRef.current = -1;
-        questsRevisionRef.current = -1;
-        chatCapabilitiesRevisionRef.current = -1;
-        chatTargetsRevisionRef.current = -1;
-        chatMessageIdsRef.current.clear();
-        gmcpStateRequestedRef.current = false;
-        setServerSensitive(false);
+        // connect() is the explicit new-session boundary. Automatic retries
+        // use MudConnection's reconnect path and intentionally skip this clear.
+        clearSessionState();
         connectionRef.current?.connect(url, ['telnet']);
-    }, []);
+    }, [clearSessionState]);
 
     const disconnect = useCallback(() => connectionRef.current?.disconnect(), []);
 
@@ -508,6 +511,7 @@ export const useMudClient = () => {
         debugEntries,
         connect,
         disconnect,
+        setTerminalSize,
         sendCommand,
         sendRoomMove,
         sendItemAction,
