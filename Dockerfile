@@ -5,7 +5,7 @@ ARG DEBIAN_VERSION=12-slim
 # Build FluffOS from the exact source revision used by the current runtime.
 FROM debian:${DEBIAN_VERSION} AS fluffos-build
 
-ARG FLUFFOS_REPOSITORY=https://gitee.com/fluffos/fluffos.git
+ARG FLUFFOS_REPOSITORY=https://github.com/fluffos/fluffos.git
 ARG FLUFFOS_COMMIT=de945701234d348e3dd3e7aee59bf9e06e58539b
 
 ENV DEBIAN_FRONTEND=noninteractive

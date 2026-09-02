@@ -250,7 +250,7 @@ curl -f http://127.0.0.1:48888/app/index.html
 
 生产镜像继续使用 Dockerfile 的 multi-stage build：
 
-- build stage 固定 FluffOS 仓库提交 de945701234d348e3dd3e7aee59bf9e06e58539b。
+- build stage 从官方 FluffOS GitHub 仓库固定 checkout 提交 de945701234d348e3dd3e7aee59bf9e06e58539b。
 - runtime 包含 driver、完整 mudlib、config.ini、已提交的 www/app、运行库、curl、
   python3 等实际依赖。
 - runtime 不包含 GCC、G++、CMake、Git、Node.js、npm、FluffOS 编译源码或 build cache。
