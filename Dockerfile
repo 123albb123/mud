@@ -52,6 +52,9 @@ RUN cmake -S /src/fluffos -B /src/fluffos/build -G Ninja \
 # Runtime image: no compiler, CMake, Git, Node.js, or FluffOS source tree.
 FROM debian:${DEBIAN_VERSION} AS runtime
 
+LABEL org.opencontainers.image.source="https://github.com/123albb123/mud" \
+      org.opencontainers.image.description="Yanhuang MUD with FluffOS and the modern web client"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \

@@ -15,40 +15,103 @@
 
 ![help](help.png "help")
 
-## 推荐部署：飞牛 FNOS Docker
+## 推荐部署：飞牛 FNOS / Docker Compose / GHCR
 
-本 fork 的稳定部署目标是飞牛 FNOS 上的 Docker。仓库已经提供可直接构建的
-`Dockerfile` 和 `docker-compose.yml`，详细的目录、持久化、备份、恢复、更新和
-Lucky 边界说明见 [docs/FNOS_DOCKER.md](docs/FNOS_DOCKER.md)。
+普通用户不需要下载源码、上传 Dockerfile、执行本地构建或编译 FluffOS。在飞牛
+Docker Compose 中新建项目，把下面完整内容粘贴为 `docker-compose.yml`：
 
-游戏集成了[mudcore](https://github.com/mudcore/mudcore)框架。首次取得源码后，确保子模块已初始化：
+```yaml
+services:
+  yanhuang-mud:
+    image: ghcr.io/123albb123/yanhuang-mud:stable
+    container_name: yanhuang-mud
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "45566:5566"
+      - "46666:6666"
+      - "48888:8888"
+    volumes:
+      - "./runtime/data:/mud/data"
+      - "./runtime/log:/mud/log"
+      - "./runtime/backup:/mud/backup"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -fsS --max-time 5
+          http://127.0.0.1:8888/app/index.html > /dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 5
+    stop_signal: SIGHUP
+    stop_grace_period: 30s
+```
 
-    git clone --recurse-submodules https://github.com/123albb123/mud.git
-    cd mud
-    git submodule update --init --recursive
+在 Compose 项目目录执行：
 
-在飞牛的 Compose 项目目录执行：
+```bash
+docker compose pull
+docker compose up -d
+docker compose ps
+```
 
-    docker compose build --pull
-    docker compose up -d
-    docker compose ps
-
-Compose 默认把真正的运行数据放在项目下的 `runtime/`，分别挂载为 `data/`、
-`log/` 和 `backup/`。如需放到飞牛指定存储位置，可在 Compose 文件同目录的本地
-`.env` 中设置一行 `YANHUANG_DATA_ROOT=/path/to/yanhuang-runtime`；该文件不会提交。
-首次启动会在数据目录中从 `data/.env.example` 创建 `data/.env`，不会覆盖已有配置。
+镜像由 GitHub Actions 发布到 [GHCR](https://github.com/123albb123/mud/pkgs/container/yanhuang-mud)，
+正式标签为 `stable`，每次 master 构建还会发布 `sha-xxxxxxx` 标签。首次发布后，若
+GitHub package 尚未设为 Public，请在 GitHub 的 **Packages → yanhuang-mud → Package
+settings → Change visibility** 设置一次；Public package 才能让飞牛匿名 `docker pull`。
 
 ### 服务入口
 
 | 入口 | 用途 |
 | --- | --- |
-| `http://<NAS-IP>:8888/app/index.html` | 内网现代 Web Client |
-| `5566` | GBK Telnet，默认仅内网 |
-| `6666` | UTF-8 Telnet，默认仅内网 |
-| `8888` | HTTP + WebSocket；现有 Lucky 可反代此端口 |
+| `http://<NAS-IP>:48888/app/index.html` | 内网现代 Web Client |
+| `<NAS-IP>:45566` | GBK Telnet |
+| `<NAS-IP>:46666` | UTF-8 Telnet |
+| `<NAS-IP>:48888` | HTTP + WebSocket 后端 |
 
-Lucky 继续负责已有 HTTPS/WSS 外网入口，Docker Compose 不包含 Lucky、Caddy、Nginx
-或其他代理。生产 Web 构建产物已提交在 `www/app/`，运行镜像不需要 Node.js。
+Lucky 继续负责已有 HTTPS/WSS 外网入口，不属于本仓库 Compose。现有 Lucky 的 MUD
+后端目标保持为 `http://<NAS-IP>:48888`，并开启 WebSocket 转发。前端会按访问页面的
+协议使用同主机 `ws://` 或 `wss://`，不需要把外部地址写死为 8888。
+
+### 更新、备份与回滚
+
+先停止容器，在飞牛文件管理器或命令行备份整个 `runtime/` 目录，然后启动并拉取新镜像：
+
+```bash
+docker compose stop
+# 复制整个 runtime/ 到带日期的备份目录
+docker compose start
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+更新只需要 `pull` 和 `up -d`，不需要 `git pull` 或 `docker compose build`。如需回滚，
+把 Compose 中的 image 临时改为某次发布的 `ghcr.io/123albb123/yanhuang-mud:sha-xxxxxxx`，
+再执行 `docker compose pull` 和 `docker compose up -d`；不要删除持久化数据。
+
+迁移到另一台 NAS 时复制 `docker-compose.yml` 和整个 `runtime/`，随后执行同样的
+`docker compose pull`、`docker compose up -d` 即可。首次启动会从镜像内的
+`data/.env.example` 初始化 `runtime/data/.env`，不会覆盖已有账号、角色或其他存档。
+
+### 开发者备用：从源码构建
+
+仓库仍保留源码构建方式，但普通 FNOS 用户不需要使用它。开发者先初始化
+`mudcore` 子模块，再使用专用的 `docker-compose.build.yml`：
+
+```bash
+git clone --recurse-submodules https://github.com/123albb123/mud.git
+cd mud
+docker compose -f docker-compose.build.yml build --pull
+docker compose -f docker-compose.build.yml up -d
+```
+
+详细的持久化、备份、恢复、健康检查和 Lucky 边界说明见
+[docs/FNOS_DOCKER.md](docs/FNOS_DOCKER.md)。生产 Web 构建产物已提交在 `www/app/`，
+运行镜像不需要 Node.js。
 
 > 推荐使用[mudlet](https://github.com/Mudlet/Mudlet)客户端连接传统 Telnet，推荐使用UTF-8编码进行游戏。
 
