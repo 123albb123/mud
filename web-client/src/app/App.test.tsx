@@ -175,12 +175,13 @@ describe('App', () => {
         expect(screen.queryByText('28ms')).not.toBeInTheDocument();
         expect(document.querySelector('.dock-quests .nav-badge')).toBeNull();
         expect(document.querySelector('.dock-chat .nav-badge')).toBeNull();
-        expect(document.querySelector('.desktop-equipment')).toBeInTheDocument();
+        expect(document.querySelector('.dock-map')).toHaveClass('dock-map');
+        expect(document.querySelector('.desktop-equipment')).toHaveClass('desktop-equipment');
         expect([...document.querySelectorAll('.dock-nav .dock-item:not(.desktop-equipment)')].map((button) => button.textContent?.trim())).toEqual([
             '江湖', '行囊', '武学', '地图', '任务', '消息',
         ]);
 
-        fireEvent.click(within(screen.getByRole('navigation', { name: '全局导航' })).getByRole('button', { name: '地图' }));
+        fireEvent.click(within(screen.getByRole('navigation', { name: '江湖主导航' })).getByRole('button', { name: '地图' }));
         expect(screen.getByText('连接服务器后显示当前房间地图。')).toBeInTheDocument();
         expect(screen.queryByText('真实地图数据尚未接入')).not.toBeInTheDocument();
         expect(sendCommand).not.toHaveBeenCalled();
@@ -202,6 +203,25 @@ describe('App', () => {
         expect(screen.getByText('连接江湖后查看任务')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /^消息$/ }));
         expect(screen.getByText('连接江湖后查看消息')).toBeInTheDocument();
+    });
+
+    it('keeps the six-slot dock presentation hooks for desktop and mobile breakpoints', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient());
+        render(<App />);
+
+        const dock = screen.getByRole('navigation', { name: '江湖主导航' });
+        expect(dock.querySelector('.dock-map')).toHaveTextContent('地图');
+        expect(dock.querySelector('.dock-map')).not.toHaveClass('desktop-equipment');
+        expect(dock.querySelector('.desktop-equipment')).toHaveTextContent('装备');
+        expect(dock.querySelector('.desktop-equipment')).toHaveClass('dock-equipment');
+    });
+
+    it('opens equipment from the desktop dock entry', () => {
+        vi.mocked(useMudClient).mockReturnValue(makeClient());
+        render(<App />);
+
+        fireEvent.click(screen.getByRole('button', { name: /^装备$/ }));
+        expect(screen.getByRole('heading', { name: '装备', level: 1 })).toBeInTheDocument();
     });
 
     it('opens the existing help view from settings', () => {

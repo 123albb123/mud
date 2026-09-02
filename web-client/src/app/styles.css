@@ -4317,6 +4317,14 @@ kbd,
 }
 
 /* Stage 9.2: final responsive and touch-safe overrides. */
+.dock-jianghu {
+    display: inline-flex;
+}
+
+.dock-map {
+    display: none;
+}
+
 .compact-player-status {
     display: none;
     min-width: 0;
@@ -4481,6 +4489,10 @@ kbd,
     }
 
     .dock-jianghu {
+        display: inline-flex;
+    }
+
+    .dock-map {
         display: inline-flex;
     }
 
