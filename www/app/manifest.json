@@ -1,0 +1,31 @@
+{
+    "name": "炎黄群侠传",
+    "short_name": "炎黄",
+    "id": "/app/index.html",
+    "start_url": "/app/index.html",
+    "scope": "/app/",
+    "display": "standalone",
+    "display_override": ["standalone", "fullscreen"],
+    "background_color": "#080a0b",
+    "theme_color": "#15110d",
+    "icons": [
+        {
+            "src": "/app/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/app/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/app/icons/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

@@ -11,9 +11,16 @@ import { SkillsPanel } from '../features/skills/SkillsPanel';
 import { CommandBar } from '../features/terminal/CommandBar';
 import { Terminal } from '../features/terminal/Terminal';
 import type { CharacterStatus, CharacterVitals } from '../protocol/gmcp/gmcp';
+import {
+    clientVersion,
+    isSafeMudUrl,
+    persistMudUrl,
+    readLastMudUrl,
+    usePwa,
+} from '../pwa/pwa';
 import { defaultMudUrl, useMudClient } from '../stores/useMudClient';
 
-type ViewKey = 'jianghu' | 'inventory' | 'equipment' | 'skills' | 'quests' | 'chat' | 'map' | 'help';
+type ViewKey = 'jianghu' | 'inventory' | 'equipment' | 'skills' | 'quests' | 'chat' | 'map' | 'help' | 'settings';
 type InventoryTab = 'inventory' | 'equipment';
 type IconName =
     | 'home' | 'map' | 'help' | 'bag' | 'armor' | 'book' | 'quest' | 'message'
@@ -106,10 +113,85 @@ const HelpView = () => (
             <article className="help-card"><div className="help-card-icon"><Icon name="sword" size={21} /></div><div><h2>江湖命令</h2><p>在底部命令栏输入原版 MUD 命令，按 Enter 发送。</p><div className="command-example">look <span>查看周围</span></div></div></article>
             <article className="help-card"><div className="help-card-icon"><Icon name="book" size={21} /></div><div><h2>武学与装备</h2><p>在武学页启用、准备招式；在行囊和装备页管理服务器返回的物品。</p><div className="help-tags"><span>启用</span><span>准备</span><span>装备</span></div></div></article>
             <article className="help-card"><div className="help-card-icon"><Icon name="message" size={21} /></div><div><h2>消息往来</h2><p>支持频道、说话、私聊与回复。可用能力由服务器实时同步。</p><div className="help-tags"><span>频道</span><span>私聊</span><span>回复</span></div></div></article>
+            <article className="help-card"><div className="help-card-icon"><Icon name="settings" size={21} /></div><div><h2>安装到手机</h2><p>iPhone 用 Safari 分享 → 添加到主屏幕；Android 可使用浏览器菜单中的“安装应用”。</p><div className="help-tags"><span>主屏幕</span><span>独立运行</span></div></div></article>
         </div>
         <div className="help-note"><span className="note-mark">炎</span><p>这是一个面向现代浏览器的炎黄客户端，保留原版命令体验，也把重要状态整理成可读、可操作的界面。</p></div>
     </div></main>
 );
+
+type SettingsViewProps = {
+    connected: boolean;
+    connectionDetail: string;
+    debugEntries: Array<{ id: number; time: string; message: string }>;
+    onConnect: () => void;
+    onToggleDebug: () => void;
+    onUrlChange: (value: string) => void;
+    pwa: ReturnType<typeof usePwa>;
+    showDebug: boolean;
+    url: string;
+};
+
+const SettingsView = ({
+    connected,
+    connectionDetail,
+    debugEntries,
+    onConnect,
+    onToggleDebug,
+    onUrlChange,
+    pwa,
+    showDebug,
+    url,
+}: SettingsViewProps) => {
+    const installStatus = pwa.isStandalone
+        ? '已作为应用运行'
+        : pwa.canInstall
+            ? '可安装到设备'
+            : pwa.isIosSafari
+                ? '可安装到设备'
+                : '当前浏览器未提供安装入口';
+    const notificationStatus = !pwa.notificationPermission || pwa.notificationPermission === 'unsupported'
+        ? '当前浏览器不支持系统通知'
+        : pwa.notificationPermission === 'denied'
+            ? '浏览器已拒绝通知，请在系统设置中允许'
+            : pwa.notificationsEnabled
+                ? '已开启'
+                : pwa.notificationPermission === 'granted'
+                    ? '已授权，但通知已关闭'
+                    : '未开启';
+
+    return (
+        <main className="page-main"><div className="page-surface settings-surface">
+            <PageHeading description="安装、通知、连接与客户端更新。" icon="settings" title="设置" />
+            <section className="settings-section" aria-labelledby="settings-app-title">
+                <div className="settings-section-heading"><div><h2 id="settings-app-title">应用</h2><p>把炎黄放到主屏幕，以独立应用方式打开。</p></div><span className="settings-section-mark">炎</span></div>
+                <div className="settings-row"><div><strong>安装状态</strong><small>{installStatus}</small></div>{pwa.canInstall && !pwa.isStandalone && <button className="settings-action primary" onClick={() => { void pwa.promptInstall(); }} type="button">安装应用</button>}</div>
+                {pwa.isIosSafari && !pwa.isStandalone && <p className="settings-hint">Safari → 分享 → 添加到主屏幕</p>}
+                <div className="settings-row"><div><strong>客户端版本</strong><small>{clientVersion}</small></div>{pwa.serviceWorkerSupported && <button className="settings-action" disabled={pwa.updateStatus === 'checking'} onClick={() => { void pwa.checkForUpdate(); }} type="button">{pwa.updateStatus === 'checking' ? '检查中…' : '检查更新'}</button>}</div>
+                {pwa.updateStatus === 'latest' && <p className="settings-feedback" role="status">当前已是最新客户端</p>}
+                {pwa.updateStatus === 'error' && <p className="settings-feedback error" role="status">暂时无法检查更新</p>}
+                {pwa.updateAvailable && <div className="settings-update-row"><strong>客户端新版本已准备好</strong><button className="settings-action primary" disabled={pwa.isUpdating} onClick={pwa.applyUpdate} type="button">{pwa.isUpdating ? '更新中…' : '更新'}</button></div>}
+            </section>
+
+            <section className="settings-section" aria-labelledby="settings-notification-title">
+                <div className="settings-section-heading"><div><h2 id="settings-notification-title">通知</h2><p>只在页面未聚焦时提醒新的私聊消息。</p></div><Icon name="message" size={24} /></div>
+                <div className="settings-row"><div><strong>通知状态</strong><small>{notificationStatus}</small></div>{pwa.notificationsEnabled ? <button className="settings-action" onClick={pwa.disableNotifications} type="button">关闭通知</button> : pwa.notificationPermission !== 'denied' && pwa.notificationPermission !== 'unsupported' && <button className="settings-action primary" onClick={() => { void pwa.enableNotifications(); }} type="button">开启通知</button>}</div>
+                {pwa.notificationPermission === 'granted' && <label className="settings-select-row"><span>通知内容</span><select aria-label="通知内容" disabled={!pwa.notificationsEnabled} onChange={(event) => pwa.setNotificationContent(event.target.value as 'body' | 'summary')} value={pwa.notificationContent}><option value="body">显示简短正文</option><option value="summary">仅提示收到新消息</option></select></label>}
+                <p className="settings-hint">通知依赖此页面仍在运行；关闭应用或系统冻结页面后不保证实时提醒。</p>
+            </section>
+
+            <section className="settings-section" aria-labelledby="settings-connection-title">
+                <div className="settings-section-heading"><div><h2 id="settings-connection-title">连接</h2><p>{connected ? '已连接到江湖服务器。' : connectionDetail || '尚未连接到江湖服务器。'}</p></div><span className={'settings-connection-dot ' + (connected ? 'connected' : '')} /></div>
+                <div className="settings-connection-form"><label htmlFor="settings-server-url">WebSocket 地址</label><input id="settings-server-url" onChange={(event) => onUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button className="settings-action primary" onClick={onConnect} type="button">{connected ? '重新连接' : '连接'}</button></div>
+                {!isSafeMudUrl(url) && <p className="settings-hint">地址仅在不含账号、密码、查询参数时记住。</p>}
+            </section>
+
+            <section className="settings-section settings-debug-section" aria-labelledby="settings-debug-title">
+                <div className="settings-section-heading"><div><h2 id="settings-debug-title">协议调试</h2><p>{debugEntries.length > 0 ? `已记录 ${debugEntries.length} 条协议事件。` : '默认不显示协议事件。'}</p></div><Icon name="spark" size={24} /></div>
+                <button className="settings-action" onClick={onToggleDebug} type="button">{showDebug ? '关闭协议调试' : '打开协议调试'}</button>
+            </section>
+        </div></main>
+    );
+};
 
 const DebugPanel = ({ entries, onClose }: { entries: Array<{ id: number; time: string; message: string }>; onClose: () => void }) => (
     <aside className="debug-panel" aria-label="协议调试"><div className="debug-heading"><div><strong>协议调试</strong></div><button onClick={onClose} type="button">关闭</button></div><div className="debug-log">{entries.length === 0 ? <p>暂无协议事件。</p> : entries.map((entry) => <div key={entry.id}><time>{entry.time}</time><span>{entry.message}</span></div>)}</div></aside>
@@ -117,10 +199,12 @@ const DebugPanel = ({ entries, onClose }: { entries: Array<{ id: number; time: s
 
 export const App = () => {
     const client = useMudClient();
-    const [url, setUrl] = useState(defaultMudUrl);
+    const pwa = usePwa(client.chatMessages);
+    const [url, setUrl] = useState(() => readLastMudUrl(defaultMudUrl()));
     const [activeView, setActiveView] = useState<ViewKey>('jianghu');
     const [inventoryTab, setInventoryTab] = useState<InventoryTab>('inventory');
     const [showDebug, setShowDebug] = useState(false);
+    const [hideUpdatePrompt, setHideUpdatePrompt] = useState(false);
     const autoConnectStarted = useRef(false);
     const connected = client.connectionState === 'connected';
     const busy = client.connectionState === 'connecting' || client.connectionState === 'reconnecting';
@@ -132,12 +216,23 @@ export const App = () => {
         }
     }, [client.connect, url]);
 
+    useEffect(() => {
+        if (!pwa.updateAvailable) {
+            setHideUpdatePrompt(false);
+        }
+    }, [pwa.updateAvailable]);
+
     const navigate = (view: ViewKey) => {
         if (view === 'inventory') {
             setInventoryTab('inventory');
         }
         setActiveView(view);
         setShowDebug(false);
+    };
+
+    const handleUrlChange = (value: string) => {
+        setUrl(value);
+        persistMudUrl(value);
     };
 
     let page: ReactNode;
@@ -153,6 +248,8 @@ export const App = () => {
         page = <main className="page-main"><div className="page-surface"><PageHeading description="管理当前启用与准备的武学。" icon="book" title="武学" action={<span className="count-label">{client.skills.length} 门武学</span>} /><SkillsPanel connected={connected} disabled={!connected || client.status?.can_act === false} onAction={client.sendSkillAction} skills={client.skills} status={client.status} /></div></main>;
     } else if (activeView === 'quests') {
         page = <main className="page-main"><div className="page-surface"><PageHeading description="查看任务状态与进度。" icon="quest" title="任务" action={<span className="count-label">{client.quests?.quests.length ?? 0} 项当前</span>} /><QuestPanel connected={connected} embedded snapshot={client.quests} /></div></main>;
+    } else if (activeView === 'settings') {
+        page = <SettingsView connected={connected} connectionDetail={client.connectionDetail} debugEntries={client.debugEntries} onConnect={() => client.connect(url)} onToggleDebug={() => setShowDebug((current) => !current)} onUrlChange={handleUrlChange} pwa={pwa} showDebug={showDebug} url={url} />;
     } else {
         page = <main className="page-main"><div className="page-surface chat-page-surface"><PageHeading description="查看消息并参与交流。" icon="message" title="消息" action={<span className="count-label">{client.chatMessages.length} 条消息</span>} /><ChatPanel capabilities={client.chatCapabilities} connected={connected} embedded messages={client.chatMessages} onSend={client.sendChat} targets={client.chatTargets} /></div></main>;
     }
@@ -165,10 +262,11 @@ export const App = () => {
             <header className="game-header">
                 <button className="brand" onClick={() => navigate('jianghu')} type="button"><span className="brand-mark">炎黄</span><span className="brand-seal">江湖</span></button>
                 <nav className="top-nav" aria-label="全局导航"><button className={activeView === 'jianghu' ? 'active' : ''} onClick={() => navigate('jianghu')} type="button"><Icon name="home" size={17} />江湖</button><button className={activeView === 'map' ? 'active' : ''} onClick={() => navigate('map')} type="button"><Icon name="map" size={17} />地图</button><button className={activeView === 'help' ? 'active' : ''} onClick={() => navigate('help')} type="button"><Icon name="help" size={17} />帮助</button></nav>
-                <div className="header-actions"><div className={'connection-state ' + client.connectionState} title={client.connectionDetail || stateLabels[client.connectionState]}><span /><strong>{stateLabels[client.connectionState]}</strong>{client.connectionDetail && <em>{client.connectionDetail}</em>}</div><button aria-label="打开协议调试" className="settings-button" onClick={() => setShowDebug((current) => !current)} title="协议调试" type="button"><Icon name="settings" size={21} /></button></div>
+                <div className="header-actions"><div className={'connection-state ' + client.connectionState} title={client.connectionDetail || stateLabels[client.connectionState]}><span /><strong>{stateLabels[client.connectionState]}</strong>{client.connectionDetail && <em>{client.connectionDetail}</em>}</div><button aria-label="打开应用设置" className="settings-button" onClick={() => navigate('settings')} title="应用设置" type="button"><Icon name="settings" size={21} /></button></div>
             </header>
 
-            {!connected && <section className="connection-strip" aria-label="连接设置"><div className="connection-strip-copy"><span className="strip-led" /><span>{busy ? '正在寻找江湖入口…' : '尚未连接到江湖服务器'}</span><small>{client.connectionDetail || '可修改 WebSocket 地址后重新连接'}</small></div><div className="connection-strip-form"><label htmlFor="server-url">服务器</label><input id="server-url" onChange={(event) => setUrl(event.target.value)} spellCheck={false} type="url" value={url} /><button onClick={() => client.connect(url)} type="button">{busy ? '重连' : '连接'}</button></div></section>}
+            {!pwa.isOnline && <div className="network-status-banner" role="status"><span className="strip-led" />网络已断开，无法连接江湖</div>}
+            {!connected && <section className="connection-strip" aria-label="连接设置"><div className="connection-strip-copy"><span className="strip-led" /><span>{!pwa.isOnline ? '网络已断开，无法连接江湖' : busy ? '正在寻找江湖入口…' : '尚未连接到江湖服务器'}</span><small>{client.connectionDetail || '可修改 WebSocket 地址后重新连接'}</small></div><div className="connection-strip-form"><label htmlFor="server-url">服务器</label><input id="server-url" onChange={(event) => handleUrlChange(event.target.value)} spellCheck={false} type="url" value={url} /><button onClick={() => client.connect(url)} type="button">{busy ? '重连' : '连接'}</button></div></section>}
 
             {activeView === 'jianghu' ? <main className="game-main">
                 <aside className="left-rail"><PlayerCard connected={connected} status={client.status} vitals={client.vitals} /><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /><div className="rail-tip"><Icon name="spark" size={17} /><span>所有状态会随服务器快照实时更新</span></div></aside>
@@ -177,6 +275,7 @@ export const App = () => {
                 <section className="mobile-combat"><CombatPanel actions={client.combatActions} combat={client.combat} connected={connected} disabled={!connected} entities={client.entities} onAction={client.sendCombatAction} status={client.status} /></section>
             </main> : page}
 
+            {pwa.updateAvailable && !hideUpdatePrompt && <aside className="update-banner" role="status" aria-live="polite"><div><strong>客户端新版本已准备好</strong><span>闲时更新，不会自动刷新当前页面。</span></div><div className="update-banner-actions"><button onClick={() => setHideUpdatePrompt(true)} type="button">稍后</button><button className="primary" disabled={pwa.isUpdating} onClick={pwa.applyUpdate} type="button">{pwa.isUpdating ? '更新中…' : '更新'}</button></div></aside>}
             <DockNav activeView={activeView} messageCount={client.chatMessages.length} onNavigate={navigate} questCount={client.quests?.quests.length ?? 0} />
             {showDebug && <DebugPanel entries={client.debugEntries} onClose={() => setShowDebug(false)} />}
         </div>
